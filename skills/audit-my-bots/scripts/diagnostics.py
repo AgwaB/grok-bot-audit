@@ -16,11 +16,36 @@ FMT = '%Y-%m-%d %H:%M'
 P = lambda s: dt.datetime.strptime(s, FMT)
 INCIDENT_MIN = 60
 WAIT_H = 6
-FIX_MAX = 8
+FIX_MAX = 12
 SESSION_GAP_H = 6   # incidents further apart than this are separate occasions
 
 def days_between(a, b):
     return (b - a).total_seconds() / 86400
+
+SENT_SPLIT = re.compile(r'(?<=[.!?\u3002\uff01\uff1f])\s+')
+
+def addressed_sentence(text, rx, long_draft=600, edge=250):
+    """The sentence where the bot tells the user about a lasting change, or None if the cue only appears inside
+    content the bot drafted: code blocks, quoted or table lines, or the middle of a long draft."""
+    text = text or ''
+    lines, fence = [], False
+    for ln in text.splitlines():
+        if ln.strip().startswith('```'): fence = not fence; continue
+        if fence or re.match(r'\s*(>|\|)', ln): continue
+        lines.append(ln)
+    body = '\n'.join(lines)
+    m = rx.search(body)
+    if not m: return None
+    if len(body) > long_draft and edge < m.start() < len(body) - edge: return None
+    start = max(body.rfind('\n', 0, m.start()), *(body.rfind(x, 0, m.start()) for x in ('. ', '! ', '? ', '\u3002'))) + 1
+    ends = [i for i in (body.find(x, m.end()) for x in ('. ', '! ', '? ', '\n', '\u3002')) if i >= 0]
+    sent = norm(body[start:(min(ends) + 1 if ends else len(body))])
+    if sent.count('"') % 2 or sent.count('\u201c') != sent.count('\u201d'): return None   # inside a quotation
+    return sent[:300]
+
+def last_sentence(text):
+    parts = [norm(x) for x in SENT_SPLIT.split(norm(text)) if norm(x)]
+    return (parts[-1] if parts else '')[:300]
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -60,13 +85,23 @@ def main():
                     (P(ts) - P(incidents[-1]['last'])).total_seconds() <= INCIDENT_MIN * 60:
                 incidents[-1]['keys'].append(k); incidents[-1]['last'] = ts; continue
             incidents.append(dict(topic=v.get('topic') or 'other', first=ts, last=ts, keys=[k], confidence=v.get('confidence', 'medium')))
-        fixes = [dict(ts=e['ts'], kind='memory_write' if e.get('kind') == 'memory_write' else 'bot_said',
-                      text=norm(e['text'])[:200]) for e in ev
-                 if e.get('ts') and ((e['role'] == 'bot' and FIX.search(e['text'] or '')) or e.get('kind') == 'memory_write')]
+        fixes = [dict(ts=e['ts'], kind='memory_write', text=norm(e['text'])[:300]) for e in ev
+                 if e.get('ts') and e.get('kind') == 'memory_write']
+        for e in ev:   # "from now on…" said to the user (not inside drafted content)
+            if e.get('ts') and e['role'] == 'bot':
+                sent = addressed_sentence(e['text'], FIX)
+                if sent: fixes.append(dict(ts=e['ts'], kind='bot_said', text=sent))
         # promises of a lasting change that the judge marked on a correction's reply (any language)
-        fixes += [dict(ts=jin[k]['ts'], kind='bot_promised', text=norm(jin[k].get('next_bot', ''))[-200:])
-                  for k, v in labels.items() if k.startswith(bid + ':') and v.get('fix_promised') and k in jin and jin[k].get('ts')]
-        fixes.sort(key=lambda f: f['ts'])
+        for k, v in labels.items():
+            if k.startswith(bid + ':') and v.get('fix_promised') and k in jin and jin[k].get('ts'):
+                nb = jin[k].get('next_bot', '')
+                fixes.append(dict(ts=jin[k]['ts'], kind='bot_promised', text=addressed_sentence(nb, FIX) or last_sentence(nb)))
+        seen, uniq = set(), []
+        for f in sorted(fixes, key=lambda f: f['ts']):   # one entry per distinct save or promise
+            sig = (f['kind'] == 'memory_write', norm(f['text']).lower())
+            if sig in seen: continue
+            seen.add(sig); uniq.append(f)
+        fixes = [dict(f, id=f'fx-{i}') for i, f in enumerate(uniq, 1)]
         user_days = sorted({e['ts'][:10] for e in users})
         groups = {}
         for inc in incidents:
@@ -88,14 +123,12 @@ def main():
             # incident on. Whether one is about this group's problem can't be told from words, so they are candidates:
             # they change neither status nor impact until the host bot confirms. Each carries the facts the decision
             # needs: incidents of this group after it, and days of use after it.
-            cand = []
-            for f in fixes:
-                if not g['first'] or f['ts'] < g['first']: continue
-                cand.append(dict(f, incidents_after=sum(1 for t in g['incident_times'] if t and t > f['ts']),
-                                 active_days_after=sum(1 for d in user_days if d > f['ts'][:10])))
-            between = [c for c in cand if c['incidents_after']][-FIX_MAX:]
-            after = [c for c in cand if not c['incidents_after']][:FIX_MAX]
-            g['fix_candidates'] = between + after
+            # The window starts at this topic's first incident in the whole history; at most FIX_MAX, the latest kept
+            # (the latest relevant fix decides), in time order. Full texts are listed once per bot (fix_candidates).
+            cand = [dict(id=f['id'], ts=f['ts'], incidents_after=sum(1 for t in g['incident_times'] if t and t > f['ts']),
+                         active_days_after=sum(1 for d in user_days if d > f['ts'][:10]))
+                    for f in fixes if g['first'] and f['ts'] >= g['first']]
+            g['fix_candidates'] = cand[-FIX_MAX:]
             g['strong'] = g['repeated'] and (g['incidents'] >= 3 or g['rate'] >= 0.05) and any(c != 'low' for c in g['confidences'])
             g.pop('incident_times')
         prefs = [k for k, v in labels.items() if k.startswith(bid + ':') and v.get('type') == 'preference']
@@ -154,7 +187,7 @@ def main():
             real_requests=len(users), share=round(len(users) / max(1, total_real), 3),
             active_days=len({e['ts'][:10] for e in users}), age_days=round(age, 1), idle_days=round(idle, 1),
             coverage=tl.get('coverage'), corrections=len(cors), incidents=incidents, groups=groups, preferences=prefs,
-            fix_events=fixes, waits=waits, skipped_questions=dict(count=len(skips), questions=[s['text'][:120] for s in skips][:10]),
+            fix_events=fixes, fix_candidates=[f for f in fixes if any(f['id'] in {c['id'] for c in g['fix_candidates']} for g in groups.values())], waits=waits, skipped_questions=dict(count=len(skips), questions=[s['text'][:120] for s in skips][:10]),
             promise_candidates=promises, memory=mem, repeated_requests=rep[:5],
             routines_seen=sum(1 for e in ev if e.get('kind') == 'routine'))
     # ---- fleet: outage windows (waits overlapping in >= 2 bots)

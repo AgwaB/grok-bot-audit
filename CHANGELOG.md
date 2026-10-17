@@ -38,5 +38,10 @@
   with both quote and text is an error. Skeleton quotes whole sentences and uses one date format.
 - A request that is the last message in the data isn't counted as unanswered; replay skips only a recorded `self`.
 - A fixed recipe for the chat message and the follow-up question; scratch files go in `$W/tmp`.
+- Iteration 3: a decisive shared-cause test (a specific rule naming what to check; generic "confirm more" rules never
+  count), sub-groups and combined override reasons; fix candidates listed once per bot, only promises said to the user,
+  the latest relevant fix decides; make_report writes the opening sentence to `report/lede.txt` and checks the whole
+  report (`report/checks.txt`); `chat` evidence ("You (in X)"), a "too early to tell" tag, the translated-quote note only
+  when needed; one clean-up option per clean-up bot; `--list --short`; clearer `--auto` lines; `tests/compare_runs.py`.
 - Offline end-to-end and regression tests on synthetic fixtures, and a skill eval kit: replay mode
   (`sessions.py replay`), scenarios and an objective grader (`tests/EVAL.md`).

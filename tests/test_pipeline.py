@@ -51,8 +51,8 @@ def main():
         d = json.load(open(f'{W}/diag.json'))
         st = {b: d['bots'][b]['status_suggested'] for b in d['bots']}
         check(st[OLD] == 'red', 'idle bot -> Clean up')
-        g = d['bots'][RECIPE]['groups']['format_length']
-        check(st[RECIPE] == 'yellow' and any('From now on' in f['text'] and f['incidents_after'] >= 1 for f in g['fix_candidates']),
+        g = d['bots'][RECIPE]['groups']['format_length']; fxt = {f['id']: f for f in d['bots'][RECIPE]['fix_candidates']}
+        check(st[RECIPE] == 'yellow' and any('From now on' in fxt[c['id']]['text'] and c['incidents_after'] >= 1 for c in g['fix_candidates']),
               'recipe bot: repeated format fix -> Needs work; the "from now on" in between is a fix candidate')
         check(st[TRIP] == 'yellow' and d['bots'][TRIP]['groups']['misread_intent']['incidents'] == 3, 'trip bot: misreads on 3 days -> Needs work')
         check(st[MEMO] == 'green', 'one-off correction does not change status')
@@ -65,6 +65,7 @@ def main():
         check(dr.get('lang') == 'en' and 'glance' in dr.get('ui', {}) and dr.get('date_label'), 'skeleton carries lang, fallback ui labels and date_label')
         rf = next(f for b in dr['bots'] if b['id'] == RECIPE for f in b['findings'] if f.get('topic') == 'format_length')
         check(rf.get('fix_check') and rf['score']['impact'] == 2, 'fix candidates are left for the bot to confirm; impact not raised')
+        check(any(f.get('cleanup') for b in dr['bots'] if b['id'] == OLD for f in b['findings']), "a clean-up bot's finding is marked cleanup (one option)")
         dr['date_label'] = 'March 11, 2030'
         for b in dr['bots']:   # what the host bot would do: write plain-language text, then clear review flags
             b['issue'] = f"Test issue for {b['name']}"; b.pop('needs_review', None)

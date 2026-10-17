@@ -10,9 +10,10 @@ r"""Bot Audit, step 3: pick user messages that might be corrections, export judg
       replies match no cue at all gets all its replies exported anyway. --auto picks per bot: every reply unless at
       least 8 in 10 of the bot's typed user messages are written mostly in Latin letters (the only messages the
       built-in English cues can match). Each bot's line prints that share and the recommended mode.
-  python3 judge_inputs.py --work W --list [--from N] [--to M]
-      Compact view: one block per item with short excerpts, numbered, for reading in batches of about 50. A bot
-      message already shown as the previous item's "next>" is not repeated.
+  python3 judge_inputs.py --work W --list [--from N] [--to M] [--short | --width N]
+      Compact view: one block per item with short excerpts, numbered. A bot message already shown as the previous
+      item's "next>" is not repeated. --short cuts bot text to 100 characters (user text stays at 400); --width N sets
+      the bot excerpt length. The last line says how big the batch was and how many items fit in about 10 KB.
   python3 judge_inputs.py --work W --show N|KEY [...]
       The full messages around these items.
   python3 judge_inputs.py --work W --label FILE
@@ -100,15 +101,20 @@ def show(work, refs):
         print(f'== {ref} ({tl["name"]}, {e["ts"]})\n-- request:\n{req["text"] if req else "(none)"}\n-- bot before:\n{p["text"]}{card_text(cards)}'
               f'\n-- user:\n{e["text"]}\n-- bot after:\n' + ('\n\n'.join(n) or '(no reply)') + '\n')
 
-def listing(work, lo, hi):
-    prev = None
+def listing(work, lo, hi, width=220):
+    prev, size, n = None, 0, 0
     for x in load_items(work):
         if lo <= x['n'] <= hi:
             same = prev and prev['bot'] == x['bot'] and prev['next_bot'] and norm(prev['next_bot'])[:120] == norm(x['prev_bot'])[:120]
-            bot = f"(= next> of #{prev['n']})" if same else ex(x['prev_bot'], 220, 0.3)
-            print(f"#{x['n']} {x['bot_name']} {x['ts']}\n  bot> {bot}\n  user> {ex(x['user'], 400, 0.7)}\n"
-                  f"  next> {ex(x['next_bot'], 220, 0.3) or '(no reply)'}")
+            bot = f"(= next> of #{prev['n']})" if same else ex(x['prev_bot'], width, 0.3)
+            block = (f"#{x['n']} {x['bot_name']} {x['ts']}\n  bot> {bot}\n  user> {ex(x['user'], 400, 0.7)}\n"
+                     f"  next> {ex(x['next_bot'], width, 0.3) or '(no reply)'}")
+            print(block); size += len(block.encode('utf-8')) + 1; n += 1
         prev = x
+    if n:
+        per = size / n
+        print(f"-- {n} items, {size / 1024:.1f} KB; about {max(5, int(10240 // per))} items of this size fit in 10 KB"
+              + ('' if width <= 100 else ' (--short makes items smaller)'))
 
 def label(work, path):
     items = load_items(work); out, bad = {}, []
@@ -145,10 +151,11 @@ def main():
     ap.add_argument('--all-for', nargs='+', metavar='BOT', default=[], help='like --all, for these bots (id or name)')
     ap.add_argument('--show', nargs='+', metavar='N'); ap.add_argument('--list', action='store_true')
     ap.add_argument('--from', dest='lo', type=int, default=1); ap.add_argument('--to', dest='hi', type=int, default=10 ** 9)
+    ap.add_argument('--short', action='store_true'); ap.add_argument('--width', type=int, default=220)
     ap.add_argument('--label', metavar='FILE')
     a = ap.parse_args()
     if a.show: return show(a.work, a.show)
-    if a.list: return listing(a.work, a.lo, a.hi)
+    if a.list: return listing(a.work, a.lo, a.hi, 100 if a.short else a.width)
     if a.label: return label(a.work, a.label)
     cues, _ = load_cues(a.work); DIRECTIVE = cues['directive']
     out, per = [], []
@@ -175,8 +182,12 @@ def main():
                             prev_bot=ex(prev['text'], PREV_N, 0.35) + card_text(cards), user=ex(e['text'], USER_N, 0.7),
                             next_bot=ex('\n'.join(nxt), NEXT_N, 0.4) if nxt else '', signal=sig or '(all replies)',
                             **({'pasted': True} if pasted else {})))
-        per.append(f"{tl['name']}: {len(cued) if mode == 'cues' else len(rows)} items ({mode}); user messages the English cues"
-                   f" can read: {round(100 * share)}% ({hit}/{n_typed}) -> recommended: {rec}")
+        why = f"{round(100 * share)}% of its user messages ({hit}/{n_typed}) are mostly Latin letters"
+        if a.auto and not (a.all or tl['id'] in a.all_for or tl['name'] in a.all_for):
+            how = f"auto: {why}" + ('; no cue matched' if mode.startswith('all (no') else '')
+        else:
+            how = ('chosen' if mode == 'all' else 'no cue matched' if mode != 'cues' else 'cue filter') + f"; {why}, recommended: {rec}"
+        per.append(f"{tl['name']}: {len(cued) if mode == 'cues' else len(rows)} items, mode used: {mode.split(' ')[0]} ({how})")
     dump_json(out, os.path.join(a.work, 'judge_inputs.json'))
     print('\n'.join(per))
     print(f'{len(out)} candidates -> {os.path.join(a.work, "judge_inputs.json")}' + ('' if out else '  (none: labels.json is {})'))

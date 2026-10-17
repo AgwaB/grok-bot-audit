@@ -52,7 +52,8 @@ def build(root):
         (2, 10, 0, 'remember', 'Keep summaries under five lines'),
         (4, 9, 0, 'u', 'Summarise the call'), (4, 9, 1, 'b', 'A long summary once more. [fake]'),
         (4, 9, 5, 'u', 'Still too long'), (4, 9, 6, 'b', 'Short. [fake]'),
-        (5, 9, 0, 'u', 'Thanks, that works'), (5, 9, 1, 'b', 'Glad it helps. [fake]'),
+        (5, 9, 0, 'u', 'Thanks, that works'), (5, 9, 1, 'b', 'Here is the memo you asked for.\n' + LONG + 'From now on, all staff send summaries by Friday. ' + LONG),
+        (5, 10, 0, 'u', 'And the code?'), (5, 10, 1, 'b', 'Sure:\n```\n# from now on use v2\n```\nThat is all. [fake]'),
         (6, 9, 0, 'u', 'Summarise the doc'), (6, 9, 1, 'b', 'Short summary. [fake]'),
         (7, 9, 0, 'u', 'Any update on the doc?'),   # last message in the data, no reply yet
     ])
@@ -85,17 +86,20 @@ def main():
         # 2. script share + recommended mode
         r = run(f'{S}/judge_inputs.py', '--work', W)
         line = next(l for l in r.stdout.splitlines() if l.startswith(NAMES[K]))
-        check('items (cues)' in line and 'recommended: all' in line and '25% (1/4)' in line,
+        check('mode used: cues (cue filter' in line and 'recommended: all' in line and '25% of its user messages (1/4)' in line,
               '2. per-bot line shows the Latin-letter share of user messages and recommends "all"')
         r = run(f'{S}/judge_inputs.py', '--work', W, '--auto')
         line = next(l for l in r.stdout.splitlines() if l.startswith(NAMES[K]))
         lf = next(l for l in r.stdout.splitlines() if l.startswith(NAMES[F]))
-        check(line.startswith(f'{NAMES[K]}: 3 items (all)') and 'recommended: cues' in lf, '2. --auto exports every reply for that bot only')
+        check(line.startswith(f'{NAMES[K]}: 3 items, mode used: all (auto:') and 'mode used: cues (auto:' in lf and 'recommended' not in line, '2. --auto exports every reply for that bot only')
         run(f'{S}/judge_inputs.py', '--work', W, '--all')
         ji = json.load(open(f'{W}/judge_inputs.json'))
         # 3. compact list
         r = run(f'{S}/judge_inputs.py', '--work', W, '--list')
         check(r.stdout.count('Here is design B') == 1 and '(= next> of #' in r.stdout, '3. --list shows each bot message once')
+        r2 = run(f'{S}/judge_inputs.py', '--work', W, '--list', '--short')
+        check(len(r2.stdout) < len(r.stdout) and re.search(r'-- \d+ items, [\d.]+ KB; about \d+ items', r2.stdout)
+              and 'Too long, the intro is useless' in r2.stdout, '3. --short keeps user text, cuts bot text, and reports the batch size')
         # 4. labels
         byu = {x['user']: x for x in ji}
         rows = [(byu['No, keep it to the notes goal'], 'No, keep', ''), (byu['Again, keep it to the notes goal'], 'Again', ''),
@@ -126,9 +130,12 @@ def main():
         check(ge['incidents'] == 3 and ge['sessions'] == 1 and ge['one_session'] and not ge['repeated'] and not ge['strong'],
               '6. three incidents in one session across midnight: one occasion, not repeated')
         gf = d['bots'][F]['groups']['format_length']
-        fc = {c['kind']: c for c in gf['fix_candidates']}
-        check(gf['sessions'] == 3 and gf['repeated'] and fc.get('bot_promised', {}).get('incidents_after') == 2
-              and fc.get('memory_write', {}).get('incidents_after') == 1 and fc['memory_write']['active_days_after'] == 4,
+        fxt = {f['id']: f for f in d['bots'][F]['fix_candidates']}
+        fc = {('promise' if fxt[c['id']]['kind'] in ('bot_said', 'bot_promised') else 'memory_write'): c for c in gf['fix_candidates']}
+        check(not any('all staff' in f['text'] or 'v2' in f['text'] for f in fxt.values()) and len(fxt) == 2,
+              '5. "from now on" inside drafted content or code is not a fix candidate; one promise listed once')
+        check(gf['sessions'] == 3 and gf['repeated'] and fc.get('promise', {}).get('incidents_after') == 2
+              and fc.get('memory_write', {}).get('incidents_after') == 1 and fc['memory_write']['active_days_after'] == 4 and 'fix_candidates' not in json.dumps(gf.get('x', {})),
               '5. fix candidates (incl. a judged promise) carry incidents_after and active_days_after')
         check(not d['bots'][F].get('waits') and d['bots'][F]['status_suggested'] != 'red', '7. the last message in the data is not an unanswered request')
         # 8-10. skeleton and finalize

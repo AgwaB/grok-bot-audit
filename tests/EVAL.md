@@ -37,8 +37,10 @@ this skill.
 ```
 Make a real-run replay folder from a finished work folder:
 `mkdir -p R && cp -r W/transcripts W/bots.json R/ && echo '{"now": "<diag.json now>"}' > R/replay.json`.
-**Consistency:** run one scenario twice with fresh agents (e.g. `ko-user` and `ko-user-b`) and compare per-bot status and
-top 3; a difference is traced to the judgment or rule that caused it (see `iteration-2/summary.md` outside the repo).
+**Consistency:** run one scenario two or more times with fresh agents (plus the same fleet in another language) and
+compare: `python3 tests/compare_runs.py a=<work1> b=<work2> ...` prints the per-bot status table, the share of bots with
+the same status in every run (and pairwise), and the top-3 overlap by target bot. Trace each difference to the judgment
+or rule that caused it.
 
 ## Prompt for a fresh agent
 Fill in the four values (see `eval_prompts.md` for each scenario) and paste:
@@ -71,6 +73,7 @@ steps 1-2, run `mkdir -p $W && cp -r <replay folder>/transcripts <replay folder>
 python3 tests/test_pipeline.py      # end to end on the synthetic fleet, English and Japanese rendering
 python3 tests/test_regressions.py   # issues found in real runs (fetch batching, --all, excerpts, notices, copy lists...)
 python3 tests/test_iteration2.py    # consistency fixes: occasions, fix facts, safer labels, placeholders, quotes
+python3 tests/test_iteration3.py    # lede file, whole-report checks, deduped fix candidates, chat label, compare_runs
 python3 tests/test_grade.py         # grade.py itself: a clean run scores 1.0, known-bad outputs fail
 ```
 

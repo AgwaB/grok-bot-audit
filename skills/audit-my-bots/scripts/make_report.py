@@ -38,8 +38,12 @@ UI_DEFAULT = {
     'lede_y': 'Checked {n} bots. {y} need work.', 'lede_r': 'Checked {n} bots. {r} should be cleaned up.',
     'sel_none': 'Tick the items you want to apply', 'sel_n': '{n} selected', 'go': 'Copy selection', 'sel_prefix': 'Apply: ',
     'pick_first': 'Tick the items to apply first', 'copied_msg': 'Copied: ', 'copy_fail': "Couldn't copy. Please select the text and copy it.",
-    'footer': 'Built from the {date} audit. Quotes are taken word for word from the chats; translated quotes show the original below.',
+    'footer': 'Built from the {date} audit. Quotes are taken word for word from the chats.',
+    'footer_tr': 'Translated quotes show the original below.',   # added only when a translated quote exists
+    'in_chat': 'You (in {bot})',   # speaker of a user quote taken from another bot's chat (evidence "chat": bot name)
+    'too_early': 'Too early to tell',   # tag on a finding whose fix was saved too recently to judge ("too_early": true)
 }
+LEDE_KEYS = ('lede_all', 'lede_y', 'lede_r', 'lede_none')
 UI = dict(UI_DEFAULT)
 
 def set_ui(custom):
@@ -116,6 +120,7 @@ details.bot[open]>summary .tog .c,details.bot:not([open])>summary .tog .o{displa
 .ev .d{color:var(--faint);font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap;padding-top:4px}
 .ev q{font-family:var(--serif);font-size:16.5px;quotes:auto}
 .ev .who{color:var(--sub);font-size:13.5px;margin-right:4px}
+.tag{font-size:12px;font-weight:400;color:var(--sub);border:1px solid var(--rule);border-radius:3px;padding:0 5px;margin-left:6px;white-space:nowrap}
 .ev .orig{display:block;color:var(--sub);font:400 13.5px/1.55 var(--sans);margin-top:1px}
 .ev .aft{color:var(--sub);font-size:14px;margin-left:4px}
 .gl{white-space:nowrap;color:var(--faint);font-weight:400;font-size:13.5px;margin-left:6px}
@@ -216,7 +221,8 @@ def ev_item(it):
         m = EVID.match(it); d, rest = (m.group(1), m.group(2)) if m else ('', it)
         return f'<li><span class="d">{E(d)}</span><span>{inline(rest)}</span></li>'
     d = E(it.get('date', ''))
-    wl = T(it.get('who')) or (UI['src'].get(it.get('source'), '') if it.get('source') in ('memory', 'description') else '')
+    wl = T(it.get('who')) or (UI['in_chat'].format(bot=T(it['chat'])) if it.get('chat') else '') \
+        or (UI['src'].get(it.get('source'), '') if it.get('source') in ('memory', 'description') else '')
     who = f'<span class="who">{E(wl)}</span>' if wl else ''
     aft = f'<span class="aft">{E(T(it["after"]))}</span>' if it.get('after') else ''
     if it.get('quote'):
@@ -253,7 +259,8 @@ def finding(f, bot_name, anchor, n):
         see = f' <a class="see" href="#{E(f["see"])}">{E(t["see"].format(ref=REFNAME(f["see"])))}</a>'
     lab = t['info'] if f.get('info') else t['fix']
     return (f'<div class="f{" pass" if passive else ""}" id="{E(anchor)}-{n}"><div class="no">{n}</div><div>'
-            f'<div class="hd"><h4>{E(T(f["title"]))}</h4>{ap}</div>'
+            f'<div class="hd"><h4>{E(T(f["title"]))}'
+            + (f' <span class="tag">{E(t["too_early"])}</span>' if f.get('too_early') else '') + f'</h4>{ap}</div>'
             f'<ul class="ev">{"".join(ev_item(x) for x in f.get("now", []))}</ul>'
             f'<p class="fx"><b>{E(lab)}</b>{E(T(f.get("fix")))}{see}</p>{cp}</div></div>')
 
@@ -273,12 +280,26 @@ def gloss(b):
     g = T(b.get('gloss'))
     return f'<span class="gl">{E(g)}</span>' if g else ''
 
+def lede_of(d):
+    """(ui key, text) of the report's opening sentence: lede_all (some need work and some clean-up), lede_y, lede_r, lede_none."""
+    bots = d['bots']; c = {k: sum(1 for b in bots if b['status'] == k) for k in ('red', 'yellow', 'green')}
+    key = 'lede_all' if c['yellow'] and c['red'] else 'lede_y' if c['yellow'] else 'lede_r' if c['red'] else 'lede_none'
+    return key, UI[key].format(n=len(bots), y=c['yellow'], r=c['red'])
+
+def has_translation(d):
+    return any(isinstance(e, dict) and isinstance(e.get('quote'), dict) and e['quote'].get('translation')
+               and norm_q(e['quote']['translation']) != norm_q(e['quote'].get('orig'))
+               for _, f in all_findings(d) for e in f.get('now', []))
+
+def all_findings(d):
+    for b in d['bots']:
+        for f in b['findings'] + b.get('more', []): yield b, f
+    for f in d.get('fleet', []): yield None, f
+
 def body(d, print_mode=False):
     t = UI; bots = d['bots']
     REFS.clear(); REFS.update({b['id']: T(b['name']) for b in bots}); REFS['fleet'] = t['fleet_bot']
-    c = {k: sum(1 for b in bots if b['status'] == k) for k in ('red', 'yellow', 'green')}
-    key = 'lede_all' if c['yellow'] and c['red'] else 'lede_y' if c['yellow'] else 'lede_r' if c['red'] else 'lede_none'
-    lede = t[key].format(n=len(bots), y=c['yellow'], r=c['red'])
+    _, lede = lede_of(d)
     cls = {'red': 'st-r', 'yellow': 'st-y', 'green': 'st-g'}
     th = t['th']
     rows = ''.join(
@@ -316,7 +337,7 @@ def body(d, print_mode=False):
 {f'<p class="note">{E(t["fleet_note"])}</p>' if t.get('fleet_note') else ''}
 <details class="bot" id="bot-fleet" open><summary><h3>{E(t['fleet_h'])}</h3><span class="stt"></span><span class="iss">{E(t['fleet_iss'])}</span>
 <span class="tog"><span class="o">{E(t['collapse'])}</span><span class="c">{E(t['expand'].format(n=len(d.get('fleet', []))))}</span></span></summary>{fleet}</details>
-<footer>{E(t['footer'].format(date=(d.get('date_label') or d['date'])))}</footer>
+<footer>{E(t['footer'].format(date=(d.get('date_label') or d['date'])) + ((' ' + t['footer_tr']) if has_translation(d) and t.get('footer_tr') else ''))}</footer>
 </div>"""
 
 def page(d, print_mode=False):
@@ -346,10 +367,41 @@ def to_pdf(html_path, pdf_path):
     finally:
         shutil.rmtree(prof, ignore_errors=True)
 
+def visible(h):
+    h = re.sub(r'<(script|style)\b.*?</\1>', ' ', h, flags=re.S)
+    return re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', h)))
+
+def check_report(d, h):
+    """Shape checks over the whole report (every page): leftover TODO, empty boxes, English fallback labels."""
+    out = []
+    if 'TODO' in visible(h): out.append('TODO text left in the report')
+    if re.search(r'<ul class="ev">\s*</ul>\s*<p class="fx"><b>[^<]*</b>\s*</p>', h): out.append('a finding with no evidence and no fix text')
+    if re.search(r'<ol class="top">\s*</ol>', h): out.append('an empty top-3 list')
+    if re.search(r'<div class="t">\s*</div>', h): out.append('an empty text box')
+    if re.search(r'<td class="i">\s*</td>', h): out.append('a bot with no current issue')
+    if str(d.get('lang', 'en')).split('-')[0] != 'en':
+        same = [k for k, v in UI_DEFAULT.items() if isinstance(v, str) and len(v) > 3 and UI.get(k) == v
+                and k not in ('n_items', 'fleet_note', 'footer_tr', 'in_chat', 'too_early', 'lede_all', 'lede_y', 'lede_r', 'lede_none')]
+        k, _ = lede_of(d)
+        if UI.get(k) == UI_DEFAULT.get(k): same.append(k)
+        if has_translation(d) and UI.get('footer_tr') == UI_DEFAULT['footer_tr']: same.append('footer_tr')
+        if any(e.get('chat') for _, f in all_findings(d) for e in f.get('now', []) if isinstance(e, dict)) and UI.get('in_chat') == UI_DEFAULT['in_chat']: same.append('in_chat')
+        if any(f.get('too_early') for _, f in all_findings(d)) and UI.get('too_early') == UI_DEFAULT['too_early']: same.append('too_early')
+        if same: out.append('labels still in English: ' + ', '.join(same))
+    return out
+
 def build(d, outdir, pdf=True):
     set_ui(d.get('ui'))
     base = os.path.join(outdir, f'fleet_report_{d["date"]}')
-    open(base + '.html', 'w', encoding='utf-8').write(page(d)); print('wrote', base + '.html')
+    h = page(d)
+    open(base + '.html', 'w', encoding='utf-8').write(h); print('wrote', base + '.html')
+    key, lede = lede_of(d)
+    open(os.path.join(outdir, 'lede.txt'), 'w', encoding='utf-8').write(lede + '\n')
+    print(f'opening sentence ({key}) -> {os.path.join(outdir, "lede.txt")}: {lede}')
+    probs = check_report(d, h)
+    open(os.path.join(outdir, 'checks.txt'), 'w', encoding='utf-8').write(''.join(f'CHECK {x}\n' for x in probs) or 'OK\n')
+    for x in probs: print('CHECK', x)
+    if not probs: print('checks: OK (whole report)')
     if pdf:
         tmp = base + '.print.html'
         open(tmp, 'w', encoding='utf-8').write(page(d, print_mode=True))

@@ -5,7 +5,7 @@
       W/diag.json (+ timelines, labels) -> W/findings_draft.json
       A starting point: statuses from the criteria, one draft finding per repeated correction group or
       repeated request, verbatim evidence quotes, and "leads" to check. Memory saves after a group started
-      are listed in the finding's "fix_check" (unverified) for the host bot to confirm or drop. Items marked needs_review=true
+      are listed in the finding's "fix_check" by id (texts once per bot in "fix_candidates"; unverified) for the host bot to confirm or drop. Items marked needs_review=true
       carry placeholder English text. The host bot writes all wording in the user's language (text fields,
       "ui" labels, "date_label", quote translations), drops noise, and removes needs_review.
   python3 build_findings.py finalize --work W [--draft FILE] [--strict]
@@ -124,7 +124,7 @@ def skeleton(a):
                          else 'Some requests went unanswered.',
                'green': 'No repeated problem.'}[b['status_suggested']]
         if b['status_suggested'] == 'red':
-            findings = [dict(title='Barely used', now=[dict(date='', text=f"Last request {md(b['last_request'])}")],
+            findings = [dict(title='Barely used', cleanup=True, now=[dict(date='', text=f"Last request {md(b['last_request'])}")],
                              fix='Consider cleaning it up, or moving its job to a bot you use. How: see the keep / clean-up item.',
                              needs_review=True, score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='idle; small share'))] + findings
         own = [w for w in b['waits'] if not w['fleet_outage'] and w['texts']]
@@ -133,7 +133,8 @@ def skeleton(a):
                                  now=[dict(date=md(w['first']), quote={'orig': pick_quote(w['texts'][0])}) for w in own[:3]],
                                  fix='It went quiet for hours after these messages. Check whether it was busy or stuck.'))
         bots.append(dict(id=bid, name=b['name'], status=b['status_suggested'], issue='TODO short issue', why=why,
-                         improving=improving, findings=findings, needs_review=True))
+                         improving=improving, findings=findings, needs_review=True,
+                         **({'fix_candidates': b['fix_candidates']} if b.get('fix_candidates') and any('fix_check' in f for f in findings) else {})))
     if empty:
         fleet.append(dict(title=f'{len(empty)} bots have no description',
                           now=[dict(date='', text=', '.join(diag['bots'][x]['name'] for x in empty))],
@@ -187,8 +188,16 @@ def visible_strings(d):
         for c in ([f['copy']] if isinstance(f.get('copy'), str) else [x.get('text', '') for x in f.get('copy') or [] if isinstance(x, dict)]):
             yield w + 'copy', c
 
+def names_only(t, names):
+    """True for a string made only of bot names, numbers and punctuation (nothing to translate)."""
+    rest = t
+    for n in sorted(names, key=len, reverse=True): rest = rest.replace(n, ' ')
+    return not re.search(r'\w', re.sub(r'[\d_]', ' ', rest))
+
 def placeholder_texts(d):
-    return [t for _, t in visible_strings(d) if isinstance(t, str) and len(t) > 3 and not t.startswith('TODO')]
+    names = [b.get('name', '') for b in d.get('bots', []) if b.get('name')]
+    return [t for _, t in visible_strings(d) if isinstance(t, str) and len(t) > 3 and not t.startswith('TODO')
+            and not names_only(t, names)]
 
 def iter_findings(d):
     for b in d['bots']:
@@ -206,8 +215,9 @@ def finalize(a):
     sk = draft.get('_skeleton') or {}
     if sk and str(draft.get('lang', 'en')).split('-')[0] != sk.get('lang', 'en'):
         left = set(sk.get('texts', []))
+        names = [b.get('name', '') for b in draft.get('bots', []) if b.get('name')]
         for where, t in visible_strings(draft):
-            if isinstance(t, str) and t in left:
+            if isinstance(t, str) and t in left and not names_only(t, names):
                 warns.append(f'{where}: still the skeleton\'s placeholder text ("{t[:50]}"); write it in the report language')
         from make_report import UI_DEFAULT
         same = [k for k, v in (draft.get('ui') or {}).items() if isinstance(v, str) and len(v) > 3 and v == UI_DEFAULT.get(k)]
@@ -268,6 +278,7 @@ def finalize(a):
     if not draft.get('top3_locked'):
         draft['top3'] = [dict(text=f.get('short') or f['title'], ref=r) for _, _, r, f in cands[:3]]
     draft.pop('leads', None); draft.pop('_skeleton', None)
+    for b in draft.get('bots', []): b.pop('fix_candidates', None)
     with open(os.path.join(a.work, 'scores.md'), 'w', encoding='utf-8') as fh:
         fh.write('| rank | ref | title | score | impact | confidence | effort | reversibility | basis |\n|---|---|---|---|---|---|---|---|---|\n')
         for k, (v, _, r, f) in enumerate(cands, 1):

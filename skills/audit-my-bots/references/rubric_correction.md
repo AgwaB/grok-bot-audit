@@ -41,8 +41,10 @@ tab-separated columns, `\N` or `-` for an empty cell:
 | user_start | the first 5–10 characters of `user`, copied; `--label` refuses the line if they don't match the item |
 
 Example: `17<TAB>correction<TAB>format_length<TAB>high<TAB>too long again<TAB>yes<TAB>Too long`
-For 300–400 items, read about 50 at a time with `--list`, write that batch's lines, run `--label` to check the echo, and
-go on. Each run rewrites `labels.json` from the whole file.
+Work in batches (SKILL.md step 4): `--list --short` about 50 items, append that batch's lines, run `--label`, check
+the echo, then the next batch. Each run rewrites `labels.json` from the whole file. A refused line (unknown item or type,
+or a `user_start` mismatch) must be fixed before going on. No corrections or preferences at all: an empty file, and
+`--label` still runs (every item becomes `none`).
 
 ## Types
 | type | meaning | label |

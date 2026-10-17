@@ -57,8 +57,10 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   "see": "fleet-1",          // optional: this bot's evidence for a shared fleet item (no Apply box, no score)
   "info": true,              // optional: information only (no Apply box, no score)
   "needs_review": true,      // set by skeleton; remove after you rewrite the text
-  "fix_check": [{"ts": "…", "kind": "memory_write|bot_said|bot_promised", "text": "…", "incidents_after": 1,
-                 "active_days_after": 3}]   // set by skeleton: unverified fix candidates; resolve, then delete
+  "fix_check": [{"id": "fx-3", "ts": "…", "incidents_after": 1, "active_days_after": 3}],
+             // set by skeleton: unverified fix candidates (texts in the bot's "fix_candidates"); resolve, then delete
+  "too_early": true,         // optional: a fix was saved too recently to judge; shown with ui.too_early
+  "cleanup": true            // set by skeleton on a clean-up bot's finding: its one option is "Show me how to clean up X"
 }
 ```
 
@@ -66,6 +68,7 @@ The scripts fix the structure; every word the reader sees comes from this file, 
 - One line holds either `quote` (words from a source) or `text` (a plain fact), never both.
 - `who` (optional) is the speaker shown before the quote, when it isn't the user in this bot's own chat: "Bot", or
   another bot's name in a fleet item.
+- `chat` (optional) is a bot name: the quote is the user's, from that bot's chat. Shown as `ui.in_chat` ("You (in X)").
 - `date` is `MM/DD` from the skeleton; you may localise it, with one format throughout.
 
 ## Quotes
@@ -86,6 +89,10 @@ it as a separate small link (`ui.n_see`). Info items are not counted either.
 ## UI labels (`ui`)
 Keys and English defaults are in `UI_DEFAULT` in `scripts/make_report.py`: section titles (`glance`, `top`, `bybot`, `fleet`),
 table headers (`th`, a list of 4), status names (`st`), copy-box labels (`kind`), buttons and messages, and `footer`.
+Opening sentence: `lede_all` (some need work and some clean-up), `lede_y` (only need work), `lede_r` (only clean-up),
+`lede_none` (nothing to fix); make_report writes the rendered one to `report/lede.txt`. `footer_tr` is appended to
+`footer` only when a translated quote exists; `in_chat` labels a user quote from another bot's chat (`{bot}`);
+`too_early` tags a finding with `"too_early": true`.
 
 ## Rules finalize enforces
 - `status` is one of green / yellow / red.
@@ -93,6 +100,7 @@ table headers (`th`, a list of 4), status names (`st`), copy-box labels (`kind`)
   name or description. No file paths or app notices.
 - `copy` is a string or a list of `{"bot", "text"}`.
 - An evidence line with both `quote` and `text` is an error.
+- A line made only of bot names and punctuation is never treated as placeholder text.
 - With `--strict`: no `fix_check` left, and `date_label` has no `TODO`. When `lang` is not English, any visible text
   still equal to the skeleton's English placeholder (recorded in `_skeleton`), and any `ui` label equal to its English
   default, is a warning. finalize removes `_skeleton`.

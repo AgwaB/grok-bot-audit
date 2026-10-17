@@ -5,7 +5,7 @@
   {"id": "ko-user", "replay": "replay-ko", "lang": "ko",
    "prompt": "\ub0b4 \ubd07\ub4e4 \uc810\uac80\ud574\uc918",
    "expected_output": "Korean chat summary and a Korean HTML+PDF report for the 7 bots; no attachment notices, paths or false 'same request' items; shared description item uses per-bot copy.",
-   "expect": {"log_has": ["judge_inputs\\.py.*--all"]}},
+   "expect": {"log_has": ["judge_inputs\\.py.*--(all|auto)"]}},
   {"id": "en-user", "replay": "replay-en", "lang": "en",
    "prompt": "Can you audit my bots? Which ones do I not need?",
    "expected_output": "English summary and report for the 7 bots with keep/clean-up suggestions, offered as 'Show me how to clean up X', never 'Delete X'.",
