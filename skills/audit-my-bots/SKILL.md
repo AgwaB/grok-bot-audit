@@ -9,14 +9,15 @@ description: Audit the user's Grok Bots from their own chat history and produce 
 - Make every ReadTranscript call yourself. Never hand the fetching to a background helper: helpers can't read other bots'
   chats.
 - Never read `store.db`, `search-index.db` or any other app database or index file as a substitute for ReadTranscript.
-- If ReadTranscript isn't available to you, stop and tell the user (in their language) that the audit can't run in this
+- If ReadTranscript isn't available to you, stop and tell the user that the audit can't run in this
   bot, and that they can ask a bot that has it. Don't try another way.
 - A background helper may be used, if at all, only for the later file-only steps (5 to 7), never for fetching or judging.
 
 The bundled scripts do the counting; you do the judging and the writing.
 
-**Language.** Write every chat message (progress, summary, questions) and the whole report in the language the user
-writes to you in. If that's unclear, use English. Quotes always keep the original words.
+**Shape is fixed, words are yours.** The scripts own the structure: sections, table, order, scores, quote checks and
+the HTML/PDF layout. You write everything the user reads (chat messages and the whole report: text, labels, dates,
+translations) in the language the user writes to you in; English if unclear. Quotes keep the original words.
 
 What the user gets: a short chat summary (status table + top 3), an HTML and a PDF report, and an offer to apply
 the proposals they pick. Nothing changes without their pick.
@@ -45,7 +46,6 @@ W="/workspace/bot-audit-run/$(date +%F)"; mkdir -p "$W"; echo "$SKILL" "$W"
 Marketplace installs are cached under `/home/box/agent-data/plugins/cache/<marketplace>/bot-audit/<commit>/`;
 local copies live under `~/.cursor/plugins/local/bot-audit/`.
 Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts; nothing else to install.
-Report language: the user's language as a BCP 47 code (`en`, `es`, `ja`, `pt-BR`, ...); `en` when unclear. Call it `$LANG_CODE`.
 
 ## 1. List the bots
 ```bash
@@ -68,8 +68,8 @@ python3 "$SKILL/scripts/sessions.py" parse --work "$W"
 If it warns that pages don't reach the start or the end, fetch the missing pages before going on.
 
 ## 3. Find correction candidates
-If any bot chats in a language other than English, first write `$W/cues.json` for those languages
-(see `$SKILL/references/cues.md`). Then:
+The built-in cue phrases are a small English fallback. For chats in other languages, either write `$W/cues.json`
+(`$SKILL/references/cues.md`) or add `--all` to judge every reply yourself.
 ```bash
 python3 "$SKILL/scripts/judge_inputs.py" --work "$W"
 ```
@@ -81,17 +81,15 @@ Read `$SKILL/references/rubric_correction.md`. Judge each item in `$W/judge_inpu
 ## 5. Run the checks
 ```bash
 python3 "$SKILL/scripts/diagnostics.py" --work "$W"
-python3 "$SKILL/scripts/build_findings.py" skeleton --work "$W" --lang "$LANG_CODE"
+python3 "$SKILL/scripts/build_findings.py" skeleton --work "$W" --lang "<BCP 47 code of the user's language>"
 ```
 
 ## 6. Write the findings
 Read `$SKILL/references/criteria.md` and `findings-schema.md`, then edit `$W/findings_draft.json`:
 - **Groups:** for each repeated-correction group, read the actual messages. Keep it only if one rule would have prevented every incident. If the bot already fixed it (a matching memory save or "from now on…" with no recurrence), move it to `improving`.
-- **Language:** write every text field in the report language. For a non-English report, also translate every value in `ui`
-  (keep the `{placeholders}`), then delete `"translate": true`.
-- **Text:** rewrite each title, fix and `copy` in plain words. `copy` is the exact text to paste into a description, a memory or a routine, and it must not contradict what the bot already learned.
-- **Quotes:** keep evidence word for word in `quote.orig`, in the chat's own language. Add `translation` (into the report
-  language) only when the chat language differs from it.
+- **Words:** replace the placeholder English everywhere (titles, fixes, `copy`, `issue`, `why`, `ui` labels, `date_label`)
+  with your own plain wording in the user's language. `copy` is the exact text to paste into a description, a memory or a routine, and it must not contradict what the bot already learned.
+- **Quotes:** keep evidence word for word in `quote.orig`. Add `translation` when the chat's language differs from the report's.
 - **Leads:** go through `leads`, which includes stale memory facts, promises, the same request in several bots and other bots' jobs. Add a finding only for what you confirm by reading. Drop noise.
 - **Shared causes:** merge cross-bot root causes into one fleet item, and point to it from each bot with `"see": "fleet-N"`.
 - **Status:** set `issue` (2–6 words) and `why` for every bot. If you change a status, say why in `why`.
@@ -108,11 +106,11 @@ python3 "$SKILL/scripts/make_report.py" "$W/findings.json" --outdir "$W/report"
 Open the HTML or a PDF page once to check it looks right.
 
 ## 8. Tell the user
-Send one short message in the user's language: one sentence ("Checked N bots. X need work, Y should be cleaned up."), the status table
+Send one short message: one sentence ("Checked N bots. X need work, Y should be cleaned up."), the status table
 (bot, status, current issue) and the top 3. Attach the PDF and the HTML. Details stay in the files, not in chat.
 
 ## 9. Offer to apply
-Ask one multi-select question (in the user's language) listing the proposals by short title, plus "None for now".
+Ask one multi-select question listing the proposals by short title, plus "None for now".
 Never label an option "Remove X", "Delete X" or "Merge X": you can't do those. For a clean-up candidate, use an option like
 "Show me how to clean up X". Apply **only** what the user picks:
 - **Memory or description text for another bot:** give the exact text and say where it goes (that bot's settings, or a message to that bot). Use a tool that changes another bot only if you have one and the user picked that item.

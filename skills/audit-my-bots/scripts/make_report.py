@@ -5,15 +5,14 @@ Usage:
   python3 make_report.py W/findings.json --outdir W/report [--no-pdf]
 
 Output: fleet_report_<date>.html and fleet_report_<date>.pdf.
-Schema: references/findings-schema.md. The report is written in the user's language: findings.json carries
-"lang" (BCP 47, sets <html lang>), plain-string text fields in that language, and optional "ui" labels that
-override the English defaults in UI_DEFAULT. A quote is {"orig": exact words, "translation": into the report
-language, only when the chat language differs}; the translation goes on the main line, the original underneath.
+Schema: references/findings-schema.md. This script owns only the structure and layout. All wording comes from
+findings.json, written by the host bot in the user's language: text fields, "ui" labels (English defaults below are
+only a fallback), "date_label" (the date as the reader writes it; fallback: the ISO date) and "lang" (sets <html lang>,
+which also picks the browser's quotation marks). A quote is {"orig": exact words, "translation": optional}; a
+translation goes on the main line with the original underneath.
 Design rules: references/design-notes.md.
 
-Fonts: system fonts only (nothing is embedded). The CSS stacks below cover macOS/iOS, Windows, Android and Linux, with
-Noto and platform fallbacks for non-Latin scripts;
-the HTML uses the viewer's fonts, the PDF uses whatever fonts the machine that prints it has.
+Fonts: generic system stacks, nothing embedded; the host bot may override them with findings.json "fonts".
 PDF: headless Chrome/Chromium print-to-pdf with a temporary profile that is removed afterwards.
 """
 import argparse, html, json, os, re, shutil, subprocess, sys, tempfile
@@ -22,8 +21,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 E = lambda s: html.escape(str(s if s is not None else ''), quote=True)
 
 # ---------- strings ----------
-# Default UI labels (English). The host bot writes the report in the user's language and passes translated
-# labels in findings.json "ui"; any key it leaves out falls back to these. Keep the {placeholders}.
+# Fallback UI labels (English), only so the pipeline runs without input. The host bot passes its own labels in
+# findings.json "ui"; any key it leaves out falls back to these. {placeholders} are filled in by the script.
 UI_DEFAULT = {
     'when': 'Checked {date}', 'glance': 'At a glance', 'th': ['Bot', 'Status', 'Current issue', 'Proposals'],
     'n_items': '{n}', 'top': 'Do these 3 first', 'topref': '{bot}, item {n}', 'bybot': 'Bot by bot', 'fleet': 'Across all bots',
@@ -39,9 +38,6 @@ UI_DEFAULT = {
     'sel_none': 'Tick the items you want to apply', 'sel_n': '{n} selected', 'go': 'Copy selection', 'sel_prefix': 'Apply: ',
     'pick_first': 'Tick the items to apply first', 'copied_msg': 'Copied: ', 'copy_fail': "Couldn't copy. Please select the text and copy it.",
     'footer': 'Built from the {date} audit. Quotes are taken word for word from the chats; translated quotes show the original below.',
-    'date_fmt': '{month} {d}, {y}',
-    'months': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
-    'quote_marks': ['\u201c', '\u201d'],
 }
 UI = dict(UI_DEFAULT)
 
@@ -54,10 +50,11 @@ def set_ui(custom):
         elif v not in (None, '', []):
             UI[k] = v
 
-def fmt_date(iso):
-    y, m, d = int(iso[:4]), int(iso[5:7]), int(iso[8:10])
-    months = UI.get('months') or UI_DEFAULT['months']
-    return UI['date_fmt'].format(y=y, m=m, d=d, month=months[m - 1] if len(months) >= 12 else m)
+def font_css(d):
+    """Optional typography from the host bot: findings.json "fonts": {"sans": "<CSS font list>", "serif": "..."}."""
+    f = d.get('fonts') or {}
+    v = ''.join(f'--{k}:{re.sub(r"[;{}<>]", "", str(f[k]))};' for k in ('sans', 'serif') if f.get(k))
+    return f':root{{{v}}}' if v else ''
 
 def T(x):
     """Text of a field: a plain string (in the report language); a {lang: text} object gives its first value."""
@@ -69,12 +66,10 @@ def T(x):
 CSS = r"""
 :root{--paper:#FCFCFA;--ink:#1E2226;--sub:#5F666D;--faint:#8A9097;--rule:#DCDDD8;--tint:#F1F2EE;
 --acc:#1F5A54;--r:#A23B2A;--y:#8C5D00;--g:#3F6B47;
---intl-sans:'Noto Sans','Noto Sans CJK SC','Noto Sans CJK JP','Noto Sans CJK KR','PingFang SC','Hiragino Sans','Apple SD Gothic Neo','Microsoft YaHei','Yu Gothic','Malgun Gothic','Noto Sans Arabic','Noto Sans Devanagari','Noto Sans Thai';
---intl-serif:'Noto Serif','Noto Serif CJK SC','Noto Serif CJK JP','Noto Serif CJK KR','Songti SC','Hiragino Mincho ProN','SimSun','Yu Mincho';
---sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,var(--intl-sans),sans-serif;
---serif:'Iowan Old Style',Charter,'Bitstream Charter','Sitka Text',Cambria,Georgia,var(--intl-serif),serif}
+--sans:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans','Noto Sans CJK SC',sans-serif;
+--serif:'Iowan Old Style',Charter,Georgia,'Noto Serif','Noto Serif CJK SC',serif}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font:400 15.5px/1.7 var(--sans);overflow-wrap:anywhere}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 15.5px/1.7 var(--sans);word-break:normal;line-break:auto;overflow-wrap:anywhere}
 .page{max-width:820px;margin:0 auto;padding:56px 28px 140px}
 a{color:inherit}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
@@ -118,7 +113,7 @@ details.bot[open]>summary .tog .c,details.bot:not([open])>summary .tog .o{displa
 .ev{margin:10px 0 0;padding:0;list-style:none}
 .ev{display:grid;grid-template-columns:minmax(76px,max-content) 1fr;column-gap:12px}.ev li{display:contents}.ev li>span{padding:2px 0}
 .ev .d{color:var(--faint);font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap;padding-top:4px}
-.ev q{font-family:var(--serif);font-size:16.5px;quotes:none}
+.ev q{font-family:var(--serif);font-size:16.5px;quotes:auto}
 .ev .who{color:var(--sub);font-size:13.5px;margin-right:4px}
 .ev .orig{display:block;color:var(--sub);font:400 13.5px/1.55 var(--sans);margin-top:1px}
 .ev .aft{color:var(--sub);font-size:14px;margin-left:4px}
@@ -229,8 +224,7 @@ def ev_item(it):
                     else f'<span class="orig">{E(qd["orig"])}</span>'
         else:
             main = T(qd)
-        oq, cq = (list(UI.get('quote_marks') or ['', '']) + ['', ''])[:2]
-        return f'<li><span class="d">{d}</span><span>{who}<q>{E(oq)}{E(main)}{E(cq)}</q>{aft}{orig}</span></li>'
+        return f'<li><span class="d">{d}</span><span>{who}<q>{E(main)}</q>{aft}{orig}</span></li>'
     return f'<li><span class="d">{d}</span><span>{who}{E(T(it.get("text")))}{aft}</span></li>'
 
 REFS = {}
@@ -297,7 +291,7 @@ def body(d, print_mode=False):
                     f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(t["expand"].format(n=len(b["findings"])))}</span></span></summary>{fs}</details>')
     fleet = ''.join(finding(f, t['fleet_bot'], 'fleet', i) for i, f in enumerate(d.get('fleet', []), 1))
     return f"""<div class="page">
-<header><h1>{E(T(d['title']).split(' (')[0])}</h1><p class="when">{E(t['when'].format(date=fmt_date(d['date'])))}</p><p class="lede">{E(lede)}</p></header>
+<header><h1>{E(T(d['title']).split(' (')[0])}</h1><p class="when">{E(t['when'].format(date=(d.get('date_label') or d['date'])))}</p><p class="lede">{E(lede)}</p></header>
 <h2>{E(t['glance'])}</h2>
 <table class="st"><thead><tr><th>{E(th[0])}</th><th>{E(th[1])}</th><th>{E(th[2])}</th><th style="text-align:right">{E(th[3])}</th></tr></thead><tbody>{rows}</tbody></table>
 <h2>{E(t['top'])}</h2><ol class="top">{top}</ol>
@@ -306,7 +300,7 @@ def body(d, print_mode=False):
 <p class="note">{E(t['fleet_note'])}</p>
 <details class="bot" id="bot-fleet" open><summary><h3>{E(t['fleet_h'])}</h3><span class="stt"></span><span class="iss">{E(t['fleet_iss'])}</span>
 <span class="tog"><span class="o">{E(t['collapse'])}</span><span class="c">{E(t['expand'].format(n=len(d.get('fleet', []))))}</span></span></summary>{fleet}</details>
-<footer>{E(t['footer'].format(date=fmt_date(d['date'])))}</footer>
+<footer>{E(t['footer'].format(date=(d.get('date_label') or d['date'])))}</footer>
 </div>"""
 
 def page(d, print_mode=False):
@@ -316,7 +310,7 @@ def page(d, print_mode=False):
     js_s = json.dumps({k: t[k] for k in ('copy', 'copied', 'sel_none', 'sel_n', 'sel_prefix', 'pick_first', 'copied_msg', 'copy_fail')}, ensure_ascii=False)
     js = '' if print_mode else '<script>' + JS_TPL.replace('__S__', js_s) + '</script>'
     return (f'<!doctype html><html lang="{E(d.get("lang") or "en")}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>{E(T(d["title"]))} ({E(d["date"][5:7].lstrip("0"))}/{E(d["date"][8:10].lstrip("0"))})</title><style>{CSS}</style></head>'
+            f'<title>{E(T(d["title"]))} ({E(d.get("date_label") or d["date"])})</title><style>{CSS}{font_css(d)}</style></head>'
             f'<body>{body(d, print_mode)}{bar}{js}</body></html>')
 
 def chrome():

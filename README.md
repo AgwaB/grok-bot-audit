@@ -19,8 +19,9 @@ and the memory the app shows it. No external APIs and no logins.
 - **An offer to apply** only the proposals you pick (memory or description text, routines). The bot can't delete or merge
   bots; for a clean-up candidate it shows you how to do it yourself, after you check that bot's routines.
 
-Chats in any language work: quotes stay in the original words, with a translation when the chat language differs from the
-report's. The scripts' cue words are English; for other languages the bot adds its own (see `skills/audit-my-bots/references/cues.md`).
+The scripts fix only the report's shape; the bot writes every word (text, labels, dates, translations) in your language.
+Quotes stay in the original words. For chats in other languages the bot supplies its own cue phrases or reads every reply
+(see `skills/audit-my-bots/references/cues.md`).
 
 ## What it looks at
 | area | how |
@@ -46,8 +47,8 @@ Requirements on the machine running the bot:
 - `python3` (standard library only);
 - Chrome or Chromium for the PDF.
 
-The report uses system fonts only, nothing is embedded. The HTML shows in the reader's own fonts (system UI fonts, with
-Noto and platform fallbacks for non-Latin scripts); the PDF uses the fonts of the machine that made it.
+The report uses system fonts only, nothing is embedded. The HTML shows in the reader's own fonts; the PDF uses
+the fonts of the machine that made it.
 
 ## Components
 | path | what |

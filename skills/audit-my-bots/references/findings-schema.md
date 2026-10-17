@@ -3,12 +3,12 @@
 `build_findings.py skeleton` writes `findings_draft.json`; you edit it, then `build_findings.py finalize` checks it and writes
 `findings.json`, which `make_report.py` renders.
 
-The report is written in the user's language (the language they write to you in; English when unclear):
-- `lang` is the BCP 47 code of that language (`en`, `es`, `ja`, `pt-BR`, ...). It becomes the HTML `lang` attribute.
-- Every text field is a plain string in that language.
-- `ui` holds the report's own labels in that language. Any key you leave out falls back to the English default in
-  `make_report.py` (`UI_DEFAULT`). For a non-English report the skeleton copies all English defaults into `ui`
-  and sets `"translate": true`; translate every value, keep each `{placeholder}`, then delete `translate`.
+The scripts fix the structure; every word the reader sees comes from this file, written by you in the user's language.
+- `lang`: BCP 47 code of the report language. It becomes the HTML `lang` attribute (the browser picks matching quotation marks).
+- Text fields are plain strings. `date_label` is the report date as the reader would write it (fallback: `date`).
+- Optional `fonts`: `{"sans": "<CSS font list>", "serif": "<CSS font list>"}` replaces the default system stacks.
+- `ui`: the report's own labels. The skeleton fills it with the English fallback (`UI_DEFAULT` in `make_report.py`);
+  rewrite the values, keep each `{placeholder}`. Keys you delete fall back to English.
 
 ```jsonc
 {
@@ -16,7 +16,8 @@ The report is written in the user's language (the language they write to you in;
   "lang": "en",
   "title": "Bot audit report",
   "date": "YYYY-MM-DD",
-  "ui": { "glance": "At a glance", "st": {"red": "Clean up", "yellow": "Needs work", "green": "Fine"}, "date_fmt": "{month} {d}, {y}" },
+  "date_label": "March 11, 2030",
+  "ui": { "glance": "At a glance", "st": {"red": "Clean up", "yellow": "Needs work", "green": "Fine"} },
   "bots": [
     {
       "id": "<agent id>",            // used for anchors and refs ("<id>-<n>")
@@ -58,20 +59,18 @@ The report is written in the user's language (the language they write to you in;
 
 ## Quotes
 - `orig` is the exact original words, in whatever language the chat was in. Never translate inside `orig`.
-- `translation` is the same quote in the report language. Add it only when the chat language differs from the report
-  language. The report shows the translation on the main line and the original underneath in smaller type.
+- `translation` (optional) is the quote in the report language, for chats in another language. The report shows it on the
+  main line and the original underneath in smaller type.
 - `lang` (optional) is the BCP 47 code of `orig`.
 
 ## UI labels (`ui`)
 Keys and English defaults are in `UI_DEFAULT` in `scripts/make_report.py`: section titles (`glance`, `top`, `bybot`, `fleet`),
-table headers (`th`, a list of 4), status names (`st`), copy-box labels (`kind`), buttons and messages, `footer`, and
-dates (`date_fmt` with `{y}`, `{m}`, `{d}`, `{month}`; `months` as 12 names). `quote_marks` is a pair such as `["“", "”"]`;
-use `["", ""]` for none.
+table headers (`th`, a list of 4), status names (`st`), copy-box labels (`kind`), buttons and messages, and `footer`.
 
 ## Rules finalize enforces
 - `status` is one of green / yellow / red.
 - Every `quote.orig` must appear word for word (whitespace aside) in the saved chats, the memory block, or a bot's name or description.
   Use "…" to skip words inside a quote; each piece is checked on its own.
-- With `--strict`, no `needs_review` flags, no `TODO` text and no `translate` flag may remain.
+- With `--strict`, no `needs_review` flags or `TODO` text may remain.
 - Scores become `value`; at most 3 scored findings per bot stay in `findings`, and the rest move to `more`. `top3` is chosen by value
   unless you set `"top3_locked": true` with your own `top3`.

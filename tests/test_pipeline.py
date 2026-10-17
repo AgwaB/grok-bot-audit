@@ -36,13 +36,11 @@ def main():
         check('WARNING' not in r.stdout, 'all fixture transcripts are complete')
         tl = json.load(open(f'{W}/timelines/{RECIPE}.json'))
         check(sum(e['role'] == 'user' for e in tl['events']) == 9 and tl['events'][0]['ts'] == '2030-03-01 09:00', 'timeline parses user messages and timestamps')
-        r = run(f'{S}/judge_inputs.py', '--work', W)   # no cues.json yet: non-Latin replies are kept by the fallback
-        ji0 = json.load(open(f'{W}/judge_inputs.json'))
-        check(any('non-Latin' in x['signal'] for x in ji0) and 'NOTE' in r.stdout, 'without cues.json, non-Latin replies are kept as candidates')
-        shutil.copy(f'{FX}/cues_ja.json', f'{W}/cues.json')
+        run(f'{S}/judge_inputs.py', '--work', W, '--all')   # no cue filter: every reply after a bot message
+        check(JA_QUOTE in {x['user'] for x in json.load(open(f'{W}/judge_inputs.json'))}, '--all exports replies in any language')
+        shutil.copy(f'{FX}/cues_ja.json', f'{W}/cues.json')   # cue phrases supplied by the host bot
         run(f'{S}/judge_inputs.py', '--work', W)
         ji = json.load(open(f'{W}/judge_inputs.json'))
-        check(not any('non-Latin' in x['signal'] for x in ji), 'with cues.json the cue words are used instead of the fallback')
         gold = json.load(open(f'{FX}/labels_by_text.json'))
         found = {x['user'] for x in ji}
         check(all(t in found for t in gold), f'candidate filter catches every planted correction ({len(gold)}/{len(gold)}; {len(ji)} candidates)')
@@ -62,6 +60,7 @@ def main():
         check(d['bots'][TRIP]['skipped_questions']['count'] == 1, 'skipped question card counted')
         run(f'{S}/build_findings.py', 'skeleton', '--work', W)
         dr = json.load(open(f'{W}/findings_draft.json'))
+        check(dr.get('lang') == 'en' and 'glance' in dr.get('ui', {}) and dr.get('date_label'), 'skeleton carries lang, fallback ui labels and date_label')
         for b in dr['bots']:   # what the host bot would do: write plain-language text, then clear review flags
             b['issue'] = f"Test issue for {b['name']}"; b.pop('needs_review', None)
             for f in b['findings']:
@@ -83,15 +82,9 @@ def main():
         run(f'{S}/make_report.py', f'{W}/findings.json', '--outdir', f'{W}/report')
         # second language: the host bot sets lang and translated ui labels (a few here; the rest fall back to English)
         fx = json.load(open(f'{W}/findings.json')); fx['lang'] = 'ja'
-        fx['ui'] = dict(glance=JA_UI['glance'], st=JA_UI['st'], date_fmt='{y}/{m}/{d}', quote_marks=['\u300c', '\u300d'])
+        fx['ui'] = dict(glance=JA_UI['glance'], st=JA_UI['st']); fx['date_label'] = '2030/3/11'; fx['fonts'] = {'sans': "'Test Sans', sans-serif"}
         json.dump(fx, open(f'{W}/findings_ja.json', 'w'), ensure_ascii=False)
         run(f'{S}/make_report.py', f'{W}/findings_ja.json', '--outdir', f'{W}/report_ja')
-        # skeleton with a non-English language must ask for translation, and --strict must refuse until it's done
-        run(f'{S}/build_findings.py', 'skeleton', '--work', W, '--lang', 'ja')
-        sk = json.load(open(f'{W}/findings_draft.json'))
-        check(sk.get('translate') is True and sk.get('lang') == 'ja' and 'glance' in sk.get('ui', {}), 'non-English skeleton carries lang, ui labels and a translate flag')
-        r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
-        check(r.returncode != 0 and 'translate' in r.stdout, 'finalize --strict refuses an untranslated draft')
         for f in ('report/fleet_report_2030-03-11.html', 'report/fleet_report_2030-03-11.pdf',
                   'report_ja/fleet_report_2030-03-11.html', 'report_ja/fleet_report_2030-03-11.pdf'):
             p = f'{W}/{f}'
@@ -105,8 +98,10 @@ def main():
               'a translated quote shows the translation with the original underneath')
         hk = open(f'{W}/report_ja/fleet_report_2030-03-11.html', encoding='utf-8').read()
         check('<html lang="ja"' in hk and JA_UI['glance'] in hk and JA_UI['st']['yellow'] in hk and '2030/3/11' in hk
-              and 'Bot by bot' in hk, 'custom ui labels and lang are used; missing labels fall back to English')
+              and 'Bot by bot' in hk, 'labels, date and lang come from findings.json; missing labels fall back to English')
         check('@font-face' not in h + hk and 'data:font' not in h + hk, 'no embedded fonts (system fonts only)')
+        check(':lang(' not in h + hk and 'quotes:auto' in h and 'line-break:auto' in h, 'one script-agnostic style, no per-language CSS')
+        check("--sans:'Test Sans', sans-serif" in hk and "Test Sans" not in h, 'host bot can override the font stacks')
         check('white-space:nowrap' in re.search(r'\.ev \.d\{[^}]*\}', h).group(0), 'evidence dates do not wrap')
         check(not re.search(r'token|subagent|executor|transcript', re.sub(r'<[^>]+>|<!--.*?-->', ' ', h, flags=re.S), re.I), 'no internal jargon in the English report')
         if '--keep' in sys.argv:

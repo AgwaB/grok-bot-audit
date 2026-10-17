@@ -116,10 +116,10 @@ def dump_json(obj, p):
     with open(p, 'w', encoding='utf-8') as fh:
         json.dump(obj, fh, ensure_ascii=False, indent=1)
 
-# ---------- language cues ----------
-# Built-in cues are English. For chats in other languages the host bot writes W/cues.json with the same
-# categories in those languages (regex fragments or plain words), see references/cues.md. They are added
-# to the English ones, never replace them.
+# ---------- cue phrases ----------
+# A minimal English fallback so the pipeline runs without input. For other languages the host bot either writes
+# W/cues.json with the same keys (added to these), or skips the cue filter and judges every reply itself
+# (judge_inputs.py --all). See references/cues.md.
 CUES_EN = {
     'directive': [r"\bno\b", r"\bnot (that|this|what)\b", r"\binstead\b", r"\bdon'?t\b", r"\bdo not\b", r"\bstop\b",
                   r"\bwrong\b", r"\bisn'?t\b", r"\bthat'?s not\b", r"\bi meant\b", r"\bi asked\b",
@@ -141,10 +141,3 @@ def load_cues(work):
         frags = list(base) + [str(x) for x in (extra.get(k) or []) if str(x).strip()]
         pats[k] = re.compile('(' + '|'.join(f'(?:{f})' for f in frags) + ')', re.I | re.M)
     return pats, bool(extra)
-
-NON_LATIN = re.compile(r'[^\x00-\u024f\u1e00-\u1eff\s\d\W]')
-
-def mostly_non_latin(t):
-    """True when most letters are outside the Latin script (CJK, Cyrillic, Arabic, Devanagari, ...)."""
-    letters = [c for c in t if c.isalpha()]
-    return bool(letters) and sum(1 for c in letters if ord(c) > 0x24f and not 0x1e00 <= ord(c) <= 0x1eff) > len(letters) / 2

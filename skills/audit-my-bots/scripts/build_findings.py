@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Bot Audit, step 4: draft and finalize the findings JSON (schema: references/findings-schema.md).
 
-  python3 build_findings.py skeleton --work W [--lang <BCP 47 code, default en>]
+  python3 build_findings.py skeleton --work W [--lang <BCP 47 code of the user's language, default en>]
       W/diag.json (+ timelines, labels) -> W/findings_draft.json
       A starting point: statuses from the criteria, one draft finding per repeated correction group or
       repeated request, verbatim evidence quotes, and "leads" to check. Items marked needs_review=true
-      carry generic English text; the host bot rewrites title/fix/copy in plain words in the report language,
-      adds quote translations where the chat language differs, drops noise, and removes needs_review.
-      With a non-English --lang the draft also has "translate": true and a "ui" object of English labels;
-      the host bot translates every text field and label, then deletes "translate".
+      carry placeholder English text. The host bot writes all wording in the user's language (text fields,
+      "ui" labels, "date_label", quote translations), drops noise, and removes needs_review.
   python3 build_findings.py finalize --work W [--draft FILE] [--strict]
       Validates (statuses, quotes must appear word for word in the saved chats, memory or descriptions),
       scores every proposal, keeps at most 3 per bot (rest -> "more"), picks the top 3 -> W/findings.json
@@ -118,11 +116,9 @@ def skeleton(a):
         if b['promise_candidates']: leads['promises'][bid] = b['promise_candidates']
         if b['skipped_questions']['count']: leads['skipped_questions'][bid] = b['skipped_questions']['count']
         leads['preferences'] += [norm(txt(k))[:120] for k in b['preferences'] if k in jin]
-    draft = dict(schema=3, title='Bot audit report', date=diag['now'][:10], lang=lang, bots=bots, fleet=fleet, leads=leads)
-    if not lang.lower().startswith('en'):
-        from make_report import UI_DEFAULT
-        draft['translate'] = True
-        draft['ui'] = {k: v for k, v in UI_DEFAULT.items()}
+    from make_report import UI_DEFAULT
+    draft = dict(schema=3, lang=lang, title='Bot audit report', date=diag['now'][:10], date_label=diag['now'][:10],
+                 ui=dict(UI_DEFAULT), bots=bots, fleet=fleet, leads=leads)
     dump_json(draft, os.path.join(a.work, 'findings_draft.json'))
     n = sum(len(b['findings']) for b in bots)
     print(f'draft: {len(bots)} bots, {n} bot findings, {len(fleet)} fleet items -> {os.path.join(a.work, "findings_draft.json")}')
@@ -139,8 +135,6 @@ def finalize(a):
     diag = load_json(os.path.join(a.work, 'diag.json'), {'bots': {}})
     text = corpus(a.work, diag)
     errors, warns = [], []
-    if draft.get('translate'):
-        warns.append(f"report language is {draft.get('lang')}: translate every text field and the ui labels, then delete \"translate\"")
     for b in draft['bots']:
         if b.get('status') not in ('green', 'yellow', 'red'):
             errors.append(f"{b.get('name')}: status must be green|yellow|red")

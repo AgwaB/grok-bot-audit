@@ -29,16 +29,13 @@ not like a generated landing page. `make_report.py` already follows these rules;
 - When nothing qualifies, say "Nothing major to fix."
 
 ## Fonts
-System fonts only; nothing is bundled or embedded. Two stacks, defined once in `make_report.py`:
-- Sans (body): system UI fonts (`-apple-system`, `Segoe UI`, Roboto, Helvetica Neue, Arial), then fallbacks for
-  non-Latin scripts (Noto Sans and Noto Sans CJK, PingFang, Hiragino, Apple SD Gothic Neo, Microsoft YaHei, Yu Gothic,
-  Malgun Gothic, Noto Sans Arabic / Devanagari / Thai), then `sans-serif`.
-- Serif (title, quotes): Iowan Old Style, Charter, Sitka Text, Cambria, Georgia, then non-Latin fallbacks (Noto Serif and
-  Noto Serif CJK, Songti, Hiragino Mincho, SimSun, Yu Mincho), then `serif`.
-The order doesn't favor any report language. The HTML uses the reader's fonts, so it can look slightly different per device.
-The PDF embeds whatever the printing machine has.
+System fonts only, nothing embedded. One generic sans stack (`system-ui`, `-apple-system`, `Segoe UI`, Roboto, Helvetica Neue,
+Arial, Noto Sans, Noto Sans CJK, `sans-serif`) and one serif stack (Iowan Old Style, Charter, Georgia, Noto Serif,
+Noto Serif CJK, `serif`). The pan-CJK Noto entries only stop Linux PDF renders from picking a random decorative font for
+CJK names and quotes; other platforms use their own fonts first. The host bot may override both stacks with `fonts`. Line breaking is script-agnostic: `word-break: normal`, `line-break: auto`,
+`overflow-wrap: anywhere`. No per-language CSS.
 
 ## Language
-The report and the chat messages are in the user's language (English when unclear). Labels come from `ui` in
-`findings.json`; `lang` sets the HTML `lang` attribute. Quotes keep the original words; a translation into the report
-language is added only when the chat was in another language.
+The scripts own the shape (sections, table, order, scores, quote checks, layout). Every word the reader sees comes from
+`findings.json`, written by the host bot in the user's language: text, `ui` labels, `date_label`, translations.
+`lang` sets the HTML `lang` attribute. Quotes keep the original words.

@@ -1,8 +1,8 @@
-# Language cues (`cues.json`)
+# Cue phrases (`cues.json`)
 
-The scripts look for a few kinds of short phrases. The built-in lists are English (`CUES_EN` in `scripts/common.py`).
-When any audited bot chats in another language, write `$W/cues.json` with the same five keys for those languages
-before step 3. Entries are case-insensitive regular expressions or plain words; they are added to the English ones.
+A few checks look for short phrases. The built-in lists (`CUES_EN` in `scripts/common.py`) are a minimal English fallback.
+For chats in other languages, write `$W/cues.json` with the same five keys before step 3, using words from the actual
+chats. Entries are case-insensitive regular expressions or plain words, added to the fallback.
 
 | key | what it finds | English examples |
 |---|---|---|
@@ -22,6 +22,4 @@ before step 3. Entries are case-insensitive regular expressions or plain words; 
 }
 ```
 
-Write the cues from the actual chats: read a sample of messages first and add the words people really use.
-Without `cues.json`, `judge_inputs.py` keeps every reply written mostly in a non-Latin script as a candidate (so
-corrections are not missed), and the other checks use English cues only.
+Or skip the cue filter: `judge_inputs.py --all` exports every reply that follows a bot message, and you judge them all.
