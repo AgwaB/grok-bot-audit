@@ -1,0 +1,16 @@
+<cursor_untrusted_data_redacted source="ReadTranscript">
+
+Transcript of agent "Trip Planner" (aaaaaaaa-0000-4000-8000-000000000002), positions 16–23 of 27:
+
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u4", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs4)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Tuesday, Mar 5, 2030, 10:00 PM (UTC-5)</timestamp>\n<user_query>\n[t5u]\nWhat time does the museum open?\n</user_query>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Wednesday, Mar 6, 2030, 9:30 AM (UTC-5)</timestamp>\n<user_query>\n[t6u]\nhello?\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u5", "name": "SendToUser", "input": {"content": "Sorry for the delay, it opens at 10. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u5", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs5)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Thursday, Mar 7, 2030, 12:00 PM (UTC-5)</timestamp>\n<user_query>\n[t7u]\nFind a train from Testville to Sampleton\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u6", "name": "SendToUser", "input": {"content": "The 9:00 train. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u6", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs6)\n</cursor_untrusted_data_redacted>"}]}}
+
+Earlier entries exist; call again with before=16.
+
+</cursor_untrusted_data_redacted>

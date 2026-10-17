@@ -1,0 +1,28 @@
+{
+  "name": "bot-audit",
+  "displayName": "Bot Audit",
+  "version": "0.1.0",
+  "description": "Check up on your Grok Bots from their own chat history: usage per bot, repeated corrections, unanswered requests and overlaps, with evidence-backed proposals and merge/remove suggestions in a plain-language HTML and PDF report. English by default, Korean optional.",
+  "author": {
+    "name": "Bot Audit contributors"
+  },
+  "license": "MIT",
+  "logo": "assets/logo.png",
+  "keywords": [
+    "audit",
+    "bots",
+    "grok-bot",
+    "report",
+    "usage",
+    "cleanup",
+    "memory",
+    "routines"
+  ],
+  "category": "productivity",
+  "tags": [
+    "audit",
+    "report",
+    "bots"
+  ],
+  "skills": "./skills/"
+}

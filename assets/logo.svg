@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Bot Audit">
+  <rect width="256" height="256" rx="28" fill="#FCFCFA"/>
+  <rect x="0.75" y="0.75" width="254.5" height="254.5" rx="27.5" fill="none" stroke="#DCDDD8" stroke-width="1.5"/>
+  <!-- a checkup table: three rows, each with a status square and a rule -->
+  <g stroke="#1E2226" stroke-width="6" stroke-linecap="square">
+    <line x1="58" y1="58" x2="198" y2="58"/>
+  </g>
+  <rect x="58" y="88" width="22" height="22" fill="#A23B2A"/>
+  <rect x="58" y="126" width="22" height="22" fill="#8C5D00"/>
+  <rect x="58" y="164" width="22" height="22" fill="#3F6B47"/>
+  <g stroke="#5F666D" stroke-width="5" stroke-linecap="round">
+    <line x1="98" y1="99" x2="198" y2="99"/>
+    <line x1="98" y1="137" x2="172" y2="137"/>
+    <line x1="98" y1="175" x2="186" y2="175"/>
+  </g>
+  <line x1="58" y1="206" x2="198" y2="206" stroke="#DCDDD8" stroke-width="3"/>
+  <path d="M170 222 l10 10 l22 -26" fill="none" stroke="#1F5A54" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

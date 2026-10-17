@@ -1,0 +1,16 @@
+<cursor_untrusted_data_redacted source="ReadTranscript">
+
+Transcript of agent "Trip Planner" (aaaaaaaa-0000-4000-8000-000000000002), positions 8–15 of 27:
+
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Saturday, Mar 2, 2030, 10:08 AM (UTC-5)</timestamp>\n<user_query>\n[t2u]\nJune\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u2", "name": "SendToUser", "input": {"content": "June noted. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u2", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs2)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Monday, Mar 4, 2030, 11:00 AM (UTC-5)</timestamp>\n<user_query>\n[t3u]\nBook a table for dinner in Testville\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u3", "name": "SendToUser", "input": {"content": "I booked lunch at Sample Diner. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u3", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs3)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Monday, Mar 4, 2030, 11:03 AM (UTC-5)</timestamp>\n<user_query>\n[t4u]\nNo, I meant dinner, not lunch\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u4", "name": "SendToUser", "input": {"content": "Changed to dinner. [fake text]"}}]}}
+
+Earlier entries exist; call again with before=8.
+
+</cursor_untrusted_data_redacted>

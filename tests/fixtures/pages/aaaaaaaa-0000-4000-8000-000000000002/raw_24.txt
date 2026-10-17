@@ -1,0 +1,11 @@
+<cursor_untrusted_data_redacted source="ReadTranscript">
+
+Transcript of agent "Trip Planner" (aaaaaaaa-0000-4000-8000-000000000002), positions 24–26 of 27:
+
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Thursday, Mar 7, 2030, 12:03 PM (UTC-5)</timestamp>\n<user_query>\n[t8u]\nYou said 9:00 but I asked for an evening train, I meant evening\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u7", "name": "SendToUser", "input": {"content": "Evening: the 18:00 train. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u7", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs7)\n</cursor_untrusted_data_redacted>"}]}}
+
+Earlier entries exist; call again with before=24.
+
+</cursor_untrusted_data_redacted>

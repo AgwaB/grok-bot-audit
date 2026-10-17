@@ -1,0 +1,16 @@
+<cursor_untrusted_data_redacted source="ReadTranscript">
+
+Transcript of agent "Recipe Helper" (aaaaaaaa-0000-4000-8000-000000000001), positions 16–23 of 26:
+
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Tuesday, Mar 5, 2030, 7:03 PM (UTC-5)</timestamp>\n<user_query>\n[t5u]\nNo, too long again. Steps only\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u5", "name": "SendToUser", "input": {"content": "Steps only: 1) cook 2) eat. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u5", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs5)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Wednesday, Mar 6, 2030, 8:00 AM (UTC-5)</timestamp>\n<user_query>\n[t6u]\nIs cilantro a herb?\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u6", "name": "SendToUser", "input": {"content": "Yes, it is a herb. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u6", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs6)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Thursday, Mar 7, 2030, 8:00 PM (UTC-5)</timestamp>\n<user_query>\n[t7u]\nsuggest a quick dinner recipe for tonight\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u7", "name": "SendToUser", "input": {"content": "1) chop 2) fry 3) serve. [fake text]"}}]}}
+
+Earlier entries exist; call again with before=16.
+
+</cursor_untrusted_data_redacted>

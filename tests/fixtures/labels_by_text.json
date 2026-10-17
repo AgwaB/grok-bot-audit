@@ -1,0 +1,51 @@
+{
+ "Too long. Just give me the steps, no history": {
+  "label": true,
+  "type": "correction",
+  "topic": "format_length",
+  "confidence": "high",
+  "evidence": "\"Too long\""
+ },
+ "Still too long, I said no stories": {
+  "label": true,
+  "type": "correction",
+  "topic": "format_length",
+  "confidence": "high",
+  "evidence": "\"Still too long\""
+ },
+ "No, too long again. Steps only": {
+  "label": true,
+  "type": "correction",
+  "topic": "format_length",
+  "confidence": "high",
+  "evidence": "\"too long again\""
+ },
+ "That's not what I asked, I meant a hostel": {
+  "label": true,
+  "type": "correction",
+  "topic": "misread_intent",
+  "confidence": "high",
+  "evidence": "\"I meant a hostel\""
+ },
+ "No, I meant dinner, not lunch": {
+  "label": true,
+  "type": "correction",
+  "topic": "misread_intent",
+  "confidence": "high",
+  "evidence": "\"I meant dinner\""
+ },
+ "You said 9:00 but I asked for an evening train, I meant evening": {
+  "label": true,
+  "type": "correction",
+  "topic": "misread_intent",
+  "confidence": "high",
+  "evidence": "\"I meant evening\""
+ },
+ "너무 길어. 한 줄로 해줘": {
+  "label": true,
+  "type": "correction",
+  "topic": "format_length",
+  "confidence": "high",
+  "evidence": "\"너무 길어\""
+ }
+}

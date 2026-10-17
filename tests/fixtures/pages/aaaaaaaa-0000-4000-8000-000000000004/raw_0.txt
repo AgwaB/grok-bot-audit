@@ -1,0 +1,16 @@
+<cursor_untrusted_data_redacted source="ReadTranscript">
+
+Transcript of agent "메모봇" (aaaaaaaa-0000-4000-8000-000000000004), positions 0–7 of 13:
+
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Tuesday, Mar 5, 2030, 9:00 PM (UTC-5)</timestamp>\n<user_query>\n[t0u]\n가짜 테스트 메모 하나 저장해줘\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u0", "name": "SendToUser", "input": {"content": "저장했어요. [가짜 텍스트]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u0", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs0)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Tuesday, Mar 5, 2030, 11:00 PM (UTC-5)</timestamp>\n<user_query>\n[t1u]\n아까 메모 다시 보여줘\n</user_query>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Wednesday, Mar 6, 2030, 10:00 AM (UTC-5)</timestamp>\n<user_query>\n[t2u]\n확인?\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u1", "name": "SendToUser", "input": {"content": "늦어서 죄송해요. 메모: 가짜 테스트 메모 [가짜 텍스트]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u1", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs1)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Thursday, Mar 7, 2030, 9:00 AM (UTC-5)</timestamp>\n<user_query>\n[t3u]\n메모 요약해줘\n</user_query>"}]}}
+
+This is the start of the transcript.
+
+</cursor_untrusted_data_redacted>

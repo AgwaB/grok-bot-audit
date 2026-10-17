@@ -1,0 +1,10 @@
+<cursor_untrusted_data_redacted source="ReadTranscript">
+
+Transcript of agent "Recipe Helper" (aaaaaaaa-0000-4000-8000-000000000001), positions 24–25 of 26:
+
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u7", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs7)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Friday, Mar 8, 2030, 10:00 AM (UTC-5)</timestamp>\n<user_query>\n[t8u]\nPlan dinners for the week\n</user_query>"}]}}
+
+Earlier entries exist; call again with before=24.
+
+</cursor_untrusted_data_redacted>

@@ -1,0 +1,16 @@
+<cursor_untrusted_data_redacted source="ReadTranscript">
+
+Transcript of agent "Recipe Helper" (aaaaaaaa-0000-4000-8000-000000000001), positions 8–15 of 26:
+
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u2", "name": "SendToUser", "input": {"content": "Another long answer with a story about the farm where the beans grew. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u2", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs2)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Sunday, Mar 3, 2030, 6:04 PM (UTC-5)</timestamp>\n<user_query>\n[t3u]\nStill too long, I said no stories\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u3", "name": "SendToUser", "input": {"content": "Sorry. From now on I will keep recipes short. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u3", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs3)\n</cursor_untrusted_data_redacted>"}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Tuesday, Mar 5, 2030, 7:00 PM (UTC-5)</timestamp>\n<user_query>\n[t4u]\nSuggest a quick dinner recipe for tonight\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u4", "name": "SendToUser", "input": {"content": "A long essay about pasta shapes before the recipe. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u4", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs4)\n</cursor_untrusted_data_redacted>"}]}}
+
+Earlier entries exist; call again with before=8.
+
+</cursor_untrusted_data_redacted>

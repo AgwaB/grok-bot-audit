@@ -1,0 +1,11 @@
+<cursor_untrusted_data_redacted source="ReadTranscript">
+
+Transcript of agent "Old Notes" (aaaaaaaa-0000-4000-8000-000000000003), positions 0–2 of 3:
+
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Friday, Mar 1, 2030, 12:00 PM (UTC-5)</timestamp>\n<user_query>\n[t0u]\nSave a note: buy fake milk\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u0", "name": "SendToUser", "input": {"content": "Saved. [fake text]"}}]}}
+{"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u0", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs0)\n</cursor_untrusted_data_redacted>"}]}}
+
+This is the start of the transcript.
+
+</cursor_untrusted_data_redacted>
