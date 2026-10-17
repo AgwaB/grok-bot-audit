@@ -97,7 +97,13 @@ def user_kind(t):
 # quote checks, so they can't become leads or quotes.
 APP_NOTICE_RE = re.compile(r'^[ \t]*The user (?:attached|shared|uploaded|sent|added) (?:a |an |the |some )?(?:file|files|image|images|attachment|attachments)\b.*$', re.M | re.I)
 NOTICE_ITEM_RE = re.compile(r'^[ \t]*[-*•][ \t]*(?:/|[A-Za-z]:\\)\S*.*$', re.M)
-PATH_RE = re.compile(r'(?<![\w:/.~])(?:~|[A-Za-z]:)?(?:/[\w.@%+=-]+){2,}/?|(?<![\w])[A-Za-z]:\\(?:[\w.@ -]+\\)*[\w.@-]+')
+# A folder name may hold spaces ("/Users/me/My Project/notes.md"): a part with up to 3 more words counts when another
+# "/" follows it and each extra word starts with a capital, a digit or a non-Latin letter ("My Project", "2024 Taxes";
+# not "/usr/bin and/or"); a last part with spaces only when it ends in a file extension. The sentence after a path stays.
+_SEG = r'[\w.@%+=-]+'
+_MID = r'/' + _SEG + r'(?: (?![a-z])' + _SEG + r'){0,3}(?=/)'
+PATH_RE = re.compile(r'(?<![\w:/.~])(?:~|[A-Za-z]:)?(?:(?:' + _MID + r'){2,}/(?!\w)|(?:' + _MID + r')+/' + _SEG
+                     + r'(?:(?: [\w@%+=-]+){1,3}\.[A-Za-z0-9]{1,6}\b)?/?)|(?<![\w])[A-Za-z]:\\(?:[\w.@ -]+\\)*[\w.@-]+')
 
 def strip_app_text(t):
     """Remove app-injected notices and file paths. Returns (clean text, number of notices removed)."""

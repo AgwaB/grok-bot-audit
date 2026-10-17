@@ -8,7 +8,7 @@ Everything is computed from data inside Grok Bot (saved transcript pages, profil
 the memory block the app injects). Rules and thresholds: references/criteria.md.
 Fields marked "candidates" are leads for the host bot to read and confirm, not findings.
 """
-import argparse, collections, datetime as dt, glob, os, re, sys
+import argparse, collections, datetime as dt, glob, os, re, sys, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import dump_json, grams, jaccard, load_cues, load_json, norm
 
@@ -23,7 +23,10 @@ RATE_FLOOR = 0.01   # "3+ incidents" makes a group strong only at 1 incident per
 NEW_DAYS = 14       # a bot younger than this, that joined in the later half of the history, is too new to judge
 RELAY_DAYS = 3
 HANDOFF_LONG = 600  # bot-to-bot messages this long (median), or mostly repeating the previous one, suggest a short format
-HANDOFF_PASTE = 400 # pasted hand-offs this long (median) suggest it too      # a pasted bot answer counts as a hand-off when pasted within this many days
+HANDOFF_PASTE = 400 # pasted hand-offs this long (median) suggest it too
+BURST_MIN = 15      # bot-to-bot messages mostly this close together are one fan-out run (already machine-made), not hand-offs
+FOLLOW_MIN = 30     # a user message this soon after the bot's reply continues that conversation (a follow-up, not a new task)
+STALL_N, STALL_CHARS, STALL_SPAN_MIN = 3, 40, 10   # stall: 3+ short user messages in a row with no reply, over 10+ minutes
 # Sites with a plugin in the app (Connect apps). Matched on the host name only.
 SERVICES = {'mail.google.com': 'Gmail', 'gmail.com': 'Gmail', 'calendar.google.com': 'Google Calendar',
             'drive.google.com': 'Google Drive', 'docs.google.com': 'Google Drive', 'slack.com': 'Slack', 'notion.so': 'Notion',
@@ -84,6 +87,41 @@ def drop_links(text):
         out.append(LINK_RE.sub(' ', ln))
     return '\n'.join(out)
 
+def session_days(stamps):
+    """{timestamp string: date string of the session it belongs to}. A session runs on while messages come less than
+    SESSION_GAP_H apart, so late-night work past midnight counts as one day of use, not two."""
+    out, start, prev = {}, None, None
+    for t in sorted(set(stamps)):
+        x = P(t)
+        if prev is None or (x - prev).total_seconds() > SESSION_GAP_H * 3600: start = t[:10]
+        out[t] = start; prev = x
+    return out
+
+CODE_RE = re.compile(r'```.*?```|`[^`\n]*`|https?://\S+', re.S)
+def main_script(text):
+    """The writing system a message is mostly in (Hangul, Japanese, Han, Latin, Cyrillic, ...), or None if it has too
+    few letters. Code, links and paths are ignored; Hangul or kana count even when mixed with code words."""
+    from common import PATH_RE
+    t = PATH_RE.sub(' ', CODE_RE.sub(' ', text or ''))
+    c = collections.Counter()
+    for ch in t:
+        if ch.isalpha():
+            n = unicodedata.name(ch, '').split(' ')[0]
+            c['Japanese' if n in ('HIRAGANA', 'KATAKANA') else 'Han' if n == 'CJK' else n.title()] += 1
+    tot = sum(c.values())
+    if tot < 4: return None
+    if c['Hangul'] >= 0.15 * tot: return 'Hangul'
+    if c['Japanese'] >= 0.1 * tot: return 'Japanese'
+    if c['Han'] >= 0.3 * tot: return 'Han'
+    return c.most_common(1)[0][0]
+
+HEAD_RE = re.compile(r'^\s{0,3}#{1,6}\s+(\S.*)$', re.M)
+def templated(raw_msgs):
+    """True when most messages share one heading layout (a machine-made template, already a fixed format)."""
+    lay = collections.Counter(tuple(h.strip().lower() for h in HEAD_RE.findall(m)) for m in raw_msgs)
+    top, n = lay.most_common(1)[0]
+    return len(top) >= 2 and n >= 0.6 * len(raw_msgs)
+
 def last_sentence(text):
     parts = [norm(x) for x in SENT_SPLIT.split(norm(text)) if norm(x)]
     return (parts[-1] if parts else '')[:300]
@@ -125,7 +163,8 @@ def main():
         last_use = max([x for x in (last_user, runs[-1] if runs else None, handoffs_in[-1] if handoffs_in else None) if x], default=None)
         age = days_between(first, now); idle = days_between(last_use, now) if last_use else age
         idle_typed = days_between(last_user, now) if last_user else age
-        udays = sorted({P(e['ts']).date() for e in users})
+        sday = session_days([e['ts'] for e in users])   # ts -> date of its session (late-night work = one day)
+        udays = sorted({dt.date.fromisoformat(d) for d in sday.values()})
         typical_gap = median([(b - a).days for a, b in zip(udays, udays[1:])])
         # its own rhythm: a monthly bot is not idle after three weeks (needs 2+ active days to know the rhythm)
         within_rhythm = bool(typical_gap) and idle <= 1.5 * typical_gap + 1
@@ -160,14 +199,14 @@ def main():
             if sig in seen: continue
             seen.add(sig); uniq.append(f)
         fixes = [dict(f, id=f'fx-{i}') for i, f in enumerate(uniq, 1)]
-        user_days = sorted({e['ts'][:10] for e in users})
+        user_days = sorted(set(sday.values()))
         groups = {}
         for inc in incidents:
             g = groups.setdefault(inc['topic'], dict(incidents=0, days=set(), sessions=0, keys=[], first=inc['first'], last=None,
                                                      confidences=[], incident_times=[]))
             if not g['last'] or not inc['first'] or (P(inc['first']) - P(g['last'])).total_seconds() > SESSION_GAP_H * 3600:
                 g['sessions'] += 1
-            g['incidents'] += 1; g['days'].add((inc['first'] or '')[:10]); g['keys'] += inc['keys']
+            g['incidents'] += 1; g['days'].add(sday.get(inc['first'] or '', (inc['first'] or '')[:10])); g['keys'] += inc['keys']
             g['last'] = inc['last']; g['confidences'].append(inc['confidence']); g['incident_times'].append(inc['first'])
         n_real = max(1, len(users))
         for topic, g in groups.items():
@@ -206,7 +245,7 @@ def main():
             g['confirm_conflict'] = skips_n >= 2
         prefs = [k for k, v in labels.items() if k.startswith(bid + ':') and v.get('type') == 'preference']
         # ---- waits: user message(s) with no bot reply for >= WAIT_H hours (lower bound from the next timestamp)
-        waits = []; k = 0; seq = [e for e in ev if e['role'] in ('user', 'bot')]
+        waits, stalls = [], []; k = 0; seq = [e for e in ev if e['role'] in ('user', 'bot')]
         while k < len(seq):
             if seq[k]['role'] != 'user' or not seq[k].get('ts'):
                 k += 1; continue
@@ -214,6 +253,14 @@ def main():
             while j + 1 < len(seq) and seq[j + 1]['role'] == 'user': j += 1
             nxt_bot = seq[j + 1] if j + 1 < len(seq) else None
             t0 = P(seq[k]['ts'])
+            run = [x for x in seq[k:j + 1] if x.get('ts') and 'group' not in x]
+            short = [x for x in run if len(norm(x['text'])) <= STALL_CHARS]
+            reply_h = (P(nxt_bot['ts']) - t0).total_seconds() / 3600 if nxt_bot and nxt_bot.get('ts') else None
+            if len(short) >= STALL_N and (P(run[-1]['ts']) - P(short[0]['ts'])).total_seconds() >= STALL_SPAN_MIN * 60 \
+                    and (reply_h is None or reply_h < WAIT_H):
+                # several short nudges with no reply in between, shorter than a wait: the bot looked stuck
+                stalls.append(dict(first=run[0]['ts'], last=run[-1]['ts'], messages=len(run), texts=[norm(x['text'])[:60] for x in short][:4],
+                                   answered=nxt_bot is not None))
             if nxt_bot is None:   # the last message in the data: the bot may not have had time to answer
                 k = j + 1; continue
             else:
@@ -252,14 +299,26 @@ def main():
             mem = dict(shown_facts=len(facts), not_shown=sum(int(n) for n in re.findall(r'\((\d+) more', txt)),
                        time_sensitive=[f for f in facts if f['time_sensitive']], near_duplicates=dups, facts=facts)
         # ---- repeated requests across days (routine candidates)
-        items = [(e['ts'][:10], grams(e['text']), norm(e['text'])[:80]) for e in users if len(norm(e['text'])) >= 6]
+        # messages the judge labelled (corrections, preferences) belong to the correction groups, never also here
+        judged = {k for k, v in labels.items() if k.startswith(bid + ':') and v.get('label')}
+        follow = set()   # sent soon after the bot's reply: continues that conversation
+        prev = None
+        for e in ev:
+            if e['role'] == 'user' and prev is not None and prev['role'] == 'bot' and e.get('ts') and prev.get('ts') \
+                    and (P(e['ts']) - P(prev['ts'])).total_seconds() <= FOLLOW_MIN * 60:
+                follow.add(e['i'])
+            if e['role'] in ('user', 'bot') or e.get('kind') in ('routine', 'agent'): prev = e
+        items = [(sday.get(e['ts'], e['ts'][:10]), grams(e['text']), norm(e['text'])[:80], e['i'] in follow) for e in users
+                 if len(norm(e['text'])) >= 6 and f"{bid}:{e['i']}" not in judged]
         rep, seen = [], set()
-        for d0, g0, t0 in items:
-            sim = [(d, t) for d, g, t in items if jaccard(g0, g) >= 0.3]
-            dset = sorted({d for d, _ in sim})
+        for d0, g0, t0, _ in items:
+            sim = [(d, t, fu) for d, g, t, fu in items if jaccard(g0, g) >= 0.3]
+            dset = sorted({d for d, _, _ in sim})
             if len(dset) >= 3 and t0 not in seen:
-                seen.update(t for _, t in sim)
-                rep.append(dict(days=dset, examples=sorted({t for _, t in sim})[:4]))
+                seen.update(t for _, t, _ in sim)
+                # mostly follow-ups ("test it too", "continue"): a standing rule fits, not a scheduled routine
+                rep.append(dict(days=dset, examples=sorted({t for _, t, _ in sim})[:4], messages=len(sim),
+                                follow_up=sum(fu for _, _, fu in sim) >= 0.5 * len(sim)))
         rep.sort(key=lambda r: -len(r['days']))
         # ---- setup (references/setup.md): routine cost, browser work on a site with a plugin, safety rules in memory
         rcost = None
@@ -291,6 +350,23 @@ def main():
         for d0, t0, src in mem_texts:
             if SAFETY.search(t0) and norm(t0) not in seen_s:
                 seen_s.add(norm(t0)); safety.append(dict(date=d0, text=norm(t0)[:200], source=src))
+        # ---- chat language: replies in another writing system than the user's chat (low-priority lead)
+        langs = collections.Counter(main_script(e['text']) for e in users if 'group' not in e)
+        langs.pop(None, None); mism = None
+        if langs and langs.most_common(1)[0][1] >= 0.6 * sum(langs.values()):
+            chat_lang = langs.most_common(1)[0][0]; trig, hits = None, []
+            for e in ev:
+                if e['role'] == 'bot' and trig is not None and trig['role'] == 'user' and e.get('ts') and 'group' not in trig:
+                    rs = main_script(e['text']); us = main_script(trig['text'])
+                    letters = sum(ch.isalpha() for ch in CODE_RE.sub(' ', e['text']))
+                    if rs and letters >= 30 and rs != chat_lang and us != rs:
+                        hits.append(dict(ts=e['ts'], day=sday.get(trig['ts'], e['ts'][:10]), reply_script=rs))
+                if e['role'] == 'user' or e.get('kind') in ('routine', 'agent'): trig = e
+                elif e['role'] == 'bot': trig = None
+            hd = sorted({h['day'] for h in hits})
+            if len(hd) >= 2:
+                mism = dict(chat_script=chat_lang, reply_scripts=sorted({h['reply_script'] for h in hits}), replies=len(hits),
+                            days=hd, examples=[h['ts'] for h in hits[:4]])
         groups_seen = collections.defaultdict(set)
         for e in users:
             if 'group' in e: groups_seen[e['group']].add(e['ts'][:10])
@@ -299,14 +375,15 @@ def main():
             name=b['name'], description=b.get('description', ''), description_empty=not b.get('description'),
             first_seen=first.strftime(FMT), last_request=last_user.strftime(FMT) if last_user else None,
             real_requests=len(users), share=round(len(users) / max(1, total_real), 3),
-            active_days=len({e['ts'][:10] for e in users}), age_days=round(age, 1), idle_days=round(idle, 1),
+            active_days=len(udays), age_days=round(age, 1), idle_days=round(idle, 1),
             coverage=tl.get('coverage'), corrections=len(cors), incidents=incidents, groups=groups, preferences=prefs,
             fix_events=fixes, fix_candidates=[f for f in fixes if any(f['id'] in {c['id'] for c in g['fix_candidates']} for g in groups.values())], waits=waits, skipped_questions=dict(count=len(skips), questions=[s['text'][:120] for s in skips][:10]),
             promise_candidates=promises, memory=mem, repeated_requests=rep[:5],
             handoffs_received=len(handoffs_in), routines_seen=len(runs), last_routine_run=runs[-1].strftime(FMT) if runs else None, routine_active=routine_active,
             idle_typed_days=round(idle_typed, 1), typical_gap_days=typical_gap, within_rhythm=within_rhythm, too_new=too_new, faded=faded,
             routine_cost=rcost, connector_candidates=connectors, memory_safety_rules=safety,
-            group_chats={k: sorted(v) for k, v in groups_seen.items()})
+            group_chats={k: sorted(v) for k, v in groups_seen.items()},
+            stall_candidates=stalls, language_mismatch=mism)
     # ---- fleet: outage windows (waits overlapping in >= 2 bots)
     def span(w):
         s = P(w['first']); e = P(w['until']) if w['until'] else now
@@ -375,13 +452,19 @@ def main():
     out['fleet']['group_candidates'] = cands
     # ---- fleet: long or repetitive hand-offs (bot-to-bot messages, or answers the user pastes) -> a fixed short format
     byname = {v['name']: k for k, v in out['bots'].items()}
-    hand = []
+    hand, skipped_h = [], []
     for bid, tl in tls.items():
-        msgs = collections.defaultdict(list)
+        msgs, raw, when = collections.defaultdict(list), collections.defaultdict(list), collections.defaultdict(list)
         for e in tl['events']:
-            if e.get('kind') == 'agent' and e.get('sender') and norm(e.get('text')): msgs[e['sender']].append(norm(e['text']))
+            if e.get('kind') == 'agent' and e.get('sender') and norm(e.get('text')):
+                msgs[e['sender']].append(norm(e['text'])); raw[e['sender']].append(e['text']); when[e['sender']].append(e.get('ts'))
         for snd, ms in msgs.items():
             if len(ms) < 3: continue
+            tsl = sorted(P(t) for t in when[snd] if t)
+            close = sum(1 for x, y in zip(tsl, tsl[1:]) if (y - x).total_seconds() <= BURST_MIN * 60)
+            why_skip = 'template' if templated(raw[snd]) else 'burst' if len(tsl) >= 3 and close >= 0.5 * (len(tsl) - 1) else None
+            if why_skip:   # a machine-made template or one fan-out run: already a fixed format, nothing to suggest
+                skipped_h.append(dict(src_name=snd, to_name=names[bid], messages=len(ms), reason=why_skip)); continue
             rep_ = [jaccard(grams(x), grams(y)) for x, y in zip(ms, ms[1:])]
             med, rpt = median([len(x) for x in ms]), sum(rep_) / len(rep_)
             if med >= HANDOFF_LONG or (rpt >= 0.5 and med >= HANDOFF_PASTE / 2):   # short repeated pings are fine
@@ -392,6 +475,7 @@ def main():
         if med >= HANDOFF_PASTE:
             hand.append(dict(via='pasted', src_name=names[x], to_name=names[y], src=x, to=y, messages=len(v), median_chars=int(med), repetitive=None))
     out['fleet']['handoff_format_candidates'] = hand
+    out['fleet']['handoff_format_skipped'] = skipped_h
     # ---- fleet: group chats with the same members (only groups seen in the saved chats)
     members = collections.defaultdict(set); gdays = collections.defaultdict(set)
     for bid, b in out['bots'].items():
@@ -407,8 +491,8 @@ def main():
         if b['age_days'] >= 3 and b['idle_days'] >= max(3, b['age_days'] / 2) and (b['share'] < 0.05 or b['faded']) \
                 and not b['too_new'] and not b['within_rhythm']:
             st = 'red'
-            reasons.append('barely used: idle {idle_days} of {age_days} days, under 5% of use'.format(**b) if b['share'] < 0.05 else
-                           'stopped: used about every {typical_gap_days} days, now idle {idle_days} days'.format(**b))
+            reasons.append('stopped: used about every {typical_gap_days} days, now idle {idle_days} days'.format(**b) if b['faded'] else
+                           'barely used: idle {idle_days} of {age_days} days, under 5% of use'.format(**b))
         else:
             strong = [t for t, g in b['groups'].items() if g['strong']]
             own_waits = [w for w in b['waits'] if not w['fleet_outage']]

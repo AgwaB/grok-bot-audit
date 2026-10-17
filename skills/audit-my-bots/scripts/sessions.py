@@ -104,7 +104,7 @@ def parse_one(d):
     entries, cover = load_pages(d)
     events, memory, last_ts = [], None, None
     fallback_text = []
-    offsets = collections.Counter()
+    offsets, offsets_any = collections.Counter(), collections.Counter()
     for e in entries:
         role = e.get('role'); content = (e.get('message') or {}).get('content') or []
         if isinstance(content, str):
@@ -114,7 +114,7 @@ def parse_one(d):
             if role == 'user' and ty == 'text':
                 t = x.get('text') or ''
                 ts = parse_ts(t)
-                if ts: last_ts = ts
+                if ts: last_ts = ts; offsets_any[ts.utcoffset()] += 1
                 k = user_kind(t)
                 m = re.search(r'<memory_context>(.*?)</memory_context>', t, re.S)
                 if m: memory = dict(text=m.group(1).strip(), ts=ts or last_ts)
@@ -160,23 +160,37 @@ def parse_one(d):
     if not any(ev['role'] == 'bot' for ev in events):   # bots that answer in plain text
         for f in reversed(fallback_text):
             events.insert(f.pop('_pos'), f)
-    tz = offsets.most_common(1)[0][0] if offsets else dt.timedelta(0)
+    # The user's zone: from their own messages; a bot they never typed to (routine runs, messages from other bots only)
+    # takes it from any timestamped entry; with none at all, parse() gives it the fleet's zone.
+    tz = (offsets or offsets_any or {None: 1})
+    tz = collections.Counter(tz).most_common(1)[0][0]
+    return dict(events=events, memory=memory, coverage=cover, tz=tz)
+
+def localize(tl, tz):
+    """Write every timestamp as local 'YYYY-MM-DD HH:MM' in zone tz (a timedelta)."""
     zone = dt.timezone(tz)
-    for i, ev in enumerate(events):
+    for i, ev in enumerate(tl['events']):
         ev['i'] = i
         ev['ts'] = ev['ts'].astimezone(zone).strftime('%Y-%m-%d %H:%M') if ev.get('ts') else None
-    if memory:
-        memory['ts'] = memory['ts'].astimezone(zone).strftime('%Y-%m-%d %H:%M') if memory.get('ts') else None
-    return dict(events=events, memory=memory, coverage=cover, utc_offset_hours=tz.total_seconds() / 3600)
+    if tl['memory']:
+        tl['memory']['ts'] = tl['memory']['ts'].astimezone(zone).strftime('%Y-%m-%d %H:%M') if tl['memory'].get('ts') else None
+    tl.pop('tz', None); tl['utc_offset_hours'] = tz.total_seconds() / 3600
+    return tl
 
 def parse(a):
     bots = load_json(os.path.join(a.work, 'bots.json'), [])
+    parsed = []
     for b in bots:
         d = os.path.join(a.work, 'transcripts', b['id'])
         if not glob.glob(os.path.join(d, 'page_*.txt')):
             print(f"{b['name']}: no pages saved, skipped", file=sys.stderr)
             continue
-        tl = parse_one(d); tl.update(id=b['id'], name=b['name'])
+        tl = parse_one(d); tl.update(id=b['id'], name=b['name']); parsed.append(tl)
+    zones = collections.Counter(tl['tz'] for tl in parsed if tl['tz'] is not None)
+    fleet_tz = zones.most_common(1)[0][0] if zones else dt.timedelta(0)
+    for tl in parsed:
+        localize(tl, tl['tz'] if tl['tz'] is not None else fleet_tz)
+        b = tl
         dump_json(tl, os.path.join(a.work, 'timelines', b['id'] + '.json'))
         n_user = sum(1 for e in tl['events'] if e['role'] == 'user')
         flag = '' if tl['coverage']['complete'] else '  WARNING: pages do not reach position 0 / the end; fetch the missing pages'

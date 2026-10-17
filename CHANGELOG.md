@@ -86,3 +86,10 @@
   routine that stays quiet when nothing is new; group suggestions are one group per project with a lead bot, members in
   order and a "blocked: ask the user" step, and finalize checks that structure; the pasted answer is matched to the one
   bot message it fits best.
+- Iteration 8 (from a real-data test run): the time zone comes from any timestamped entry, and a bot with none takes
+  the fleet's zone; days of use are counted by working session (late-night work is one day); messages judged as
+  corrections are no longer also a "same request" item, and the same follow-up after answers becomes a standing rule
+  instead of a routine; a stopped habit has its own reason and clean-up title, with optional "if you come back to it"
+  lessons from its repeated corrections; file paths with spaces are recognised; new low-priority leads for stalls
+  (several short nudges, no reply) and replies in another language than the chat's; no hand-off format for
+  machine-made templates or one fan-out burst; report rows in status order and long bot names wrap.

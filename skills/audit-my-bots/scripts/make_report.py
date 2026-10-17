@@ -49,6 +49,7 @@ UI_DEFAULT = {
     'footer_tr': 'Translated quotes show the original below.',   # added only when a translated quote exists
     'in_chat': 'You (in {bot})',   # speaker of a user quote taken from another bot's chat (evidence "chat": bot name)
     'who_bot': '{bot}',   # speaker of a quote from this bot itself (evidence "who": "bot"); default: the bot's name
+    'lessons': 'If you come back to it',   # optional lessons in a clean-up item (its repeated corrections)
     'too_early': 'Too early to tell',   # tag on a finding whose fix was saved too recently to judge ("too_early": true)
 }
 LEDE_KEYS = ('lede_all', 'lede_y', 'lede_r', 'lede_none')
@@ -96,7 +97,8 @@ h2+details.bot,h2+.note+details.bot{margin-top:0}
 table.st{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 table.st th{white-space:nowrap;font-weight:400;font-size:13px;color:var(--faint);text-align:left;padding:0 12px 6px 0}
 table.st td{padding:11px 12px 11px 0;border-top:1px solid var(--rule);vertical-align:baseline}
-table.st td.n{width:30%;font-weight:600}table.st td.n a{text-decoration:none;white-space:nowrap}
+table.st td.n{width:30%;font-weight:600;overflow-wrap:anywhere}
+.ls{margin-top:10px;border-left:2px solid var(--rule);padding-left:12px}.ls .lh{margin:0 0 4px;font-size:13px;color:var(--sub)}.ls .lt{margin:8px 0 2px;font-weight:600}table.st td.n a{text-decoration:none}
 table.st td.n a:hover{text-decoration:underline;text-underline-offset:3px}
 table.st td.s{width:16%;white-space:nowrap}table.st td.c{width:12%;text-align:right;color:var(--sub)}
 table.st tr.sev-red td{border-top-color:var(--rule)}
@@ -279,6 +281,12 @@ def finding(f, bot_name, anchor, n):
     if isinstance(rv, dict) and str(rv.get('copy') or '').strip():   # optional rule-review routine next to the rule text
         cp += (f'<div class="cp"><div class="k"><span>{E(t["kind"].get("review", ""))}</span><button class="copy" type="button">'
                f'{E(t["copy"])}</button></div><div class="t">{E(T(rv["copy"]))}</div></div>')
+    ls = [x for x in f.get('lessons') or [] if isinstance(x, dict) and str(x.get('copy') or '').strip()]
+    if ls:   # a clean-up bot's repeated corrections: what to save first if the user starts using it again
+        cp += f'<div class="ls"><p class="lh">{E(t["lessons"])}</p>' + ''.join(
+            f'<p class="lt">{E(T(x.get("title")))}</p>{ev_list(x.get("now", []), bot_name)}'
+            f'<div class="cp"><div class="k"><span>{E(t["kind"].get("memory", ""))}</span><button class="copy" type="button">'
+            f'{E(t["copy"])}</button></div><div class="t">{E(T(x["copy"]))}</div></div>' for x in ls) + '</div>'
     passive = bool(f.get('see') or f.get('info'))
     ap = '' if passive else (f'<label class="ap"><input type="checkbox" class="apply" '
                              f'data-bot="{E(bot_name)}" data-no="{n}">{E(t["apply"])}</label>')

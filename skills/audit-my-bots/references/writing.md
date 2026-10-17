@@ -32,7 +32,10 @@ one sentence.
   A bot that is too new to judge (`too_new` in diag) says so in `issue` ("Too new to judge"); one kept by its routine
   or its slow rhythm says why in `why` (the skeleton drafts it).
 - **Clean-up bots:** one finding (`"cleanup": true`) says why (usage facts); fold any other finding of that bot into it,
-  since the only thing offered is "Show me how to clean up X". The skeleton sets its `short` to that line in English:
+  since the only thing offered is "Show me how to clean up X". A stopped habit's item says it was used regularly and
+  then stopped (dates and rhythm), not that it was barely used. Its repeated corrections are not proposals: the
+  skeleton moves them into the item's optional `lessons` ("if you come back to it"); write each `copy` as the rule to
+  save first if the user starts using the bot again, or delete the lesson (finalize drops empty ones). The skeleton sets its `short` to that line in English:
   rewrite it in the user's language. That `short` is both its top-3 line and its one option (SKILL.md step 9). It may be in the top 3 like any finding (by value),
   labelled with the clean-up wording. The shared job-text item skips clean-up bots on purpose: no text is written
   for a bot you suggest removing. The fleet keep / clean-up item explains how; don't repeat
@@ -101,6 +104,14 @@ one sentence.
   lasting secret gets one line in the safety item suggesting a change; an expired one-time code gets nothing.
 - **Leads that aren't corrections** (several skipped questions of one kind, a stale memory fact, a promise not kept)
   can be scored findings with the default impact in `criteria.md` §4.
+- **Stalls** (`leads.stalls`): read the messages around them. Several short nudges with no answer may be a stuck bot,
+  an error, or the user typing ahead. A finding only on 2+ days (for example, a rule to say what it is doing when work
+  takes long); one stall is at most an info line. If the user asked why a bot is slow, answer it with what you saw.
+- **Chat language** (`leads.chat_language`): low priority. A finding (impact 1, a rule to answer in the user's
+  language) only if the user minded it, in the chats or in their request to you; otherwise nothing.
+- **Follow-ups** (`kind` `follow_up`): the user adds the same follow-up after the bot's answers on many days. The fix
+  is a standing rule in that bot (`copy_kind` `memory`), never a routine. Delete it if the messages are different
+  requests that only look alike.
 - **Stale memory:** a finding only if later chats contradict the fact, or the fact has clearly expired (for example, a
   past date). "Currently" alone isn't enough.
 - **Skipped questions:** one or two mean nothing. Several of the same kind from one bot (it keeps asking which next

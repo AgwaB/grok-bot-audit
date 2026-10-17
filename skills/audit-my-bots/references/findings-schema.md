@@ -65,7 +65,10 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   "too_early": true,         // optional: a fix was saved too recently to judge; shown with ui.too_early
   "keep": true,              // set by skeleton on the fleet keep / clean-up item; alone in an all-kept fleet it renders
                              // as one compact line (no number, no box)
-  "cleanup": true            // set by skeleton on a clean-up bot's finding: its one option is "Show me how to clean up X"
+  "cleanup": true,           // set by skeleton on a clean-up bot's finding: its one option is "Show me how to clean up X"
+  "lessons": [{"topic": "format_length", "title": "…", "now": [ … ], "copy": ""}]
+             // optional, clean-up item only: that bot's repeated corrections, shown as "if you come back to it" with
+             // each copy as a rule to save first; write copy in the chat's language or delete; finalize drops empty ones
 }
 ```
 

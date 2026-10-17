@@ -35,8 +35,11 @@ and the memory block the app shows the bot. No external APIs, no logins.
   If several bots go quiet in the same window, it is a fleet outage (usually a plan limit), not a problem with one bot.
 - **Age** = now minus the first message. **Idle** = now minus the last use: a real request, a routine run or a message
   from another bot (a bot that works by routine or for other bots is in use even if the user never types to it). **Share** = the bot's real requests ÷ all real requests.
+- **Days of use** are counted by working session: messages less than 6 hours apart are one session, and a session
+  belongs to the day it started, so work that runs past midnight is one day, not two.
 - **Rhythm** = the typical gap between the days the user typed to it (needs 2+ such days). **Within its rhythm**: idle ≤ 1.5 × that gap + 1 day.
 - **Stopped habit**: used on 5+ days with a rhythm of a week or less, and now idle ≥ max(14 days, 4 × that rhythm).
+  Its reason is "stopped", not "barely used", whatever its share; the skeleton titles its clean-up item that way.
 - **Too new to judge**: age under 14 days, and the bot started in the later half of the history covered (a bot added
   recently to an older fleet). It gets no clean-up verdict; its other checks still run.
 
@@ -77,19 +80,21 @@ Each check gives leads; keep a lead only after reading the actual messages.
 | Unanswered requests / outage | real request with no reply for 6+ hours; overlapping windows across bots = fleet outage | real; an info item (the bot's own, or once for the fleet), never scored. Limit: messages sent while a bot could not run at all (e.g. after a plan limit) may be missing from its history, so silent outages can be undercounted |
 | Skipped question cards | the app reports that the user moved on without tapping a choice | mostly noise (the user often answers in text instead); a finding only when one bot asks several of the same kind of unneeded question (default impact 1) |
 | Promises without delivery | "I'll let you know…", then the user nudges ("hello?") | check by reading; often already delivered |
+| Stalls | 3+ short user messages in a row (40 characters or less, over 10+ minutes) with no reply in between, shorter than an unanswered request | check by reading: a stuck bot, an error, or the user typing ahead. One stall is information at most; a finding only if it happens on 2+ days (default impact 1) |
+| Chat language | replies in another writing system than the one the user writes this chat in (code, links and paths ignored), after a message in the chat's language, on 2+ days | low priority: a finding (impact 1) only if the user minded it (asked for their language, or said so), else nothing or a short info line |
 | Memory facts | facts with "currently/now" older than 3 days; near-duplicates | a finding only if later chats contradict the fact or it has clearly expired (default impact 1; 2 if the bot acted on the stale fact); duplicates rarely matter |
 | Description vs. use | no saved job description, or one that contradicts what the bot learned or what the user said later | real; the fix is text the user sends that bot to remember (personal bots may have no description field) |
-| Repeated work across days | similar requests on 3+ different days | routine candidate (score with effort 2) |
+| Repeated work across days | similar requests on 3+ different days; messages the judge labelled as corrections or preferences are left out (they are in the correction groups) | routine candidate (score with effort 2). If most of them are follow-ups (sent within 30 minutes of the bot's answer: "test it too", "continue"), the skeleton drafts a standing rule instead (`kind` `follow_up`, effort 1): a routine can't add a follow-up |
 | Same request in several bots | similar text across bots (attachment notices and file paths are stripped first) | noisy (shared links, the same post pasted to several bots); confirm by topic |
 | One bot doing another's job | a request closer to another bot's description than its own, counted only after that bot existed | noisy; keep only clear cases on 2+ days |
 | Safety events | seen while reading: a secret or code printed in a chat or written to a log, another bot's internal settings shown, a risky action taken without asking | one fleet info item per kind of event, naming the bot and date; never quote or repeat the secret. Counts toward "Needs work" for that bot only if it did it itself |
 | Secrets the user typed | the user pasted a password, key or login code into a chat themselves | not a bot's safety event and no status effect. A lasting secret (password, key, token) gets one line in the safety info item ("you shared a password in X's chat on DATE; consider changing it"); a one-time code that has expired gets nothing. Never quote it |
 | Bots not in the list | an event about a bot that isn't in `bots.json` (removed, renamed, or someone else's), seen only in another bot's chat | the fleet safety info item, named as written in that chat and said to be no longer in the list; never a row and no status effect on any listed bot. Don't open files it may have written to check |
 
-Leads that are not corrections (skipped questions, stale memory, promises without delivery) can become scored findings
+Leads that are not corrections (skipped questions, stale memory, promises without delivery, stalls) can become scored findings
 with the default impact above, confidence from how clear the evidence is, and effort 1.
 Stale memory and promises are also found without words (a memory fact with a date that has passed; a very short
-"…?" after an hour of silence), so chats in any language get these leads.
+"…?" after an hour of silence; several short nudges with no reply), so chats in any language get these leads.
 Setup checks (group chats, plugins instead of the browser, safety rules kept only in memory, routines that run very
 often) are in `setup.md`. They never change a bot's status.
 

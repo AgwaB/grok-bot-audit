@@ -114,8 +114,8 @@ Read `$SKILL/references/criteria.md`, `findings-schema.md`, `writing.md` and `se
   plain wording in the user's language; a `fix` says what the user can do or what is applied if they pick it. `copy`
   goes into that bot: write it in the language the user uses with that bot (routine text: `writing.md`).
 - **Quotes:** word for word in `quote.orig`; add `translation` when the chat's language differs from the report's.
-- **Leads:** check `leads` (stale memory, promises, skipped questions, the same request in several bots, other bots' jobs)
-  and any safety event you saw in the chats. Add an item only for what you confirm by reading (`writing.md`).
+- **Leads:** check `leads` (stale memory, promises, stalls, skipped questions, chat language, the same request in several
+  bots, other bots' jobs) and any safety event you saw in the chats. Add an item only for what you confirm by reading (`writing.md`).
 - **Shared causes:** one fleet item per cross-bot cause; each bot points to it with `"see": "fleet-N"`.
 - **Setup items** (`kind` group, connector, safety_rules, routine_cost…): confirm or delete each by reading (`setup.md`).
 - **Opening sentence:** rewrite the `ui.lede_*` key the final statuses will use (`writing.md`) before finalize.

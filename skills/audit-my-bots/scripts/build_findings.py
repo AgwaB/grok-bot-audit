@@ -33,6 +33,7 @@ TOPIC = {  # title, fix
  'other': ('The same correction keeps coming up', 'Save a rule so it stops repeating.'),
 }
 QUOTE_SPLIT = re.compile(r'\s*(?:…|\.\.\.)\s*')
+STATUS_ORDER = {'yellow': 0, 'red': 1, 'green': 2}   # report rows: needs work, then clean-up candidates, then fine
 
 def impact_from(n_inc, days=0, bots=1, recurred=False):
     i = 3 if (n_inc >= 4 or days >= 5 or bots >= 3) else 2 if (n_inc >= 2 or days >= 3 or bots >= 2) else 1
@@ -93,7 +94,7 @@ def skeleton(a):
     lang = a.lang
     def txt(key):
         bid, i = key.split(':'); return tls[bid]['events'][int(i)]['text']
-    order = sorted(diag['bots'].items(), key=lambda kv: -kv[1]['share'])
+    order = sorted(diag['bots'].items(), key=lambda kv: (STATUS_ORDER[kv[1]['status_suggested']], -kv[1]['share']))
     bots, fleet, empty = [], [], []
     for bid, b in order:
         findings, improving = [], []
@@ -119,19 +120,28 @@ def skeleton(a):
                 # more saves than are listed, all with no incident after them: the timeline has the rest (kind memory_write)
                 item['fix_check_omitted'] = g['fix_candidates_omitted']
             findings.append(item)
-        for r in b['repeated_requests'][:1]:
-            if len(r['days']) >= 3:
-                findings.append(dict(title='You ask for the same thing by hand on many days',
-                                     now=[dict(date=f"{md(r['days'][0])}~{md(r['days'][-1])}", quote={'orig': pick_quote(t)}) for t in r['examples'][:3]],
-                                     fix='A routine could do this on a schedule. Check the routines page in the app first.',
-                                     copy=None, copy_kind='routine', needs_review=True,
-                                     score=dict(impact=impact_from(0, days=len(r['days'])), confidence='medium', effort=2, reversibility=1.0,
-                                                basis=f"similar request on {len(r['days'])} days")))
+        reps = b['repeated_requests']   # the top routine candidate and the top follow-up (a different fix each)
+        for r in [x for x in reps if not x.get('follow_up')][:1] + [x for x in reps if x.get('follow_up')][:1]:
+            if len(r['days']) >= 3 and b['status_suggested'] != 'red':
+                ev = [dict(date=f"{md(r['days'][0])}~{md(r['days'][-1])}", quote={'orig': pick_quote(t)}) for t in r['examples'][:3]]
+                if r.get('follow_up'):
+                    # the same follow-up after its answers ("test it too", "continue"): a standing rule, not a routine
+                    findings.append(dict(title='You add the same follow-up by hand on many days', now=ev, kind='follow_up',
+                                         fix='Save it as a standing rule so it does this without being asked. TODO the rule',
+                                         copy=None, copy_kind='memory', needs_review=True,
+                                         score=dict(impact=impact_from(0, days=len(r['days'])), confidence='medium', effort=1, reversibility=1.0,
+                                                    basis=f"similar follow-up on {len(r['days'])} days")))
+                else:
+                    findings.append(dict(title='You ask for the same thing by hand on many days', now=ev,
+                                         fix='A routine could do this on a schedule. Check the routines page in the app first.',
+                                         copy=None, copy_kind='routine', needs_review=True,
+                                         score=dict(impact=impact_from(0, days=len(r['days'])), confidence='medium', effort=2, reversibility=1.0,
+                                                    basis=f"similar request on {len(r['days'])} days")))
         if b['description_empty'] and b['status_suggested'] != 'red':
             empty.append(bid)
             findings.append(dict(title='No saved job description', now=[], fix='See the shared job-text item.',
                                  see='fleet-1'))
-        why = {'red': 'Used regularly before, but quiet for far longer than usual.' if b.get('faded') and b['share'] >= 0.05 else
+        why = {'red': 'Used regularly before, but quiet for far longer than usual.' if b.get('faded') else
                       'Barely used for most of its life, and a very small part of your overall use.',
                'yellow': 'The same correction keeps coming back.' if any(g['strong'] for g in b['groups'].values())
                          else 'Some requests went unanswered.',
@@ -143,9 +153,21 @@ def skeleton(a):
         elif b['status_suggested'] == 'green' and b.get('within_rhythm') and b['idle_days'] >= max(3, b['age_days'] / 2):
             why = f"Quiet lately, but that fits how often you use it (about every {b['typical_gap_days']} days)." 
         if b['status_suggested'] == 'red':
-            findings = [dict(title='Barely used', cleanup=True, short=f"Show me how to clean up {b['name']}", now=[dict(date='', text=f"Last request {md(b['last_request'])}")],
-                             fix='Consider cleaning it up, or moving its job to a bot you use. How: see the keep / clean-up item.',
-                             needs_review=True, score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='idle; small share'))] + findings
+            last = md(b['last_request']) if b.get('last_request') else ''
+            cu = dict(cleanup=True, short=f"Show me how to clean up {b['name']}", needs_review=True,
+                      fix='Consider cleaning it up, or moving its job to a bot you use. How: see the keep / clean-up item.')
+            if b.get('faded'):   # a habit that stopped: its own title and reason, not "barely used"
+                cu.update(title='Stopped being used', now=[dict(date=f"{md(b['first_seen'])}~{last}", text=f"Used on {b['active_days']} days, about every {b['typical_gap_days']} days"),
+                                                           dict(date=last, text=f"Last request; quiet for {int(b['idle_days'])} days since")],
+                          score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='stopped habit'))
+            else:
+                cu.update(title='Barely used', now=[dict(date='', text=f"Last request {last}" if last else 'No typed requests')],
+                          score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='idle; small share'))
+            # its repeated corrections are not proposals for a bot to clean up; they become optional lessons
+            # "if you come back to it" inside the clean-up item (empty copy until the host writes it; dropped if left empty)
+            lessons = [dict(topic=f['topic'], title=f['title'], now=f['now'][:2], copy='') for f in findings if f.get('topic')]
+            if lessons: cu['lessons'] = lessons
+            findings = [cu] + [f for f in findings if not f.get('topic')]
         own = [w for w in b['waits'] if not w['fleet_outage'] and w['texts']]
         if own:   # unanswered requests: information, not a scored proposal
             findings.append(dict(title='Some requests went unanswered', info=True, needs_review=True,
@@ -175,12 +197,14 @@ def skeleton(a):
                       fix=('Nothing is deleted automatically. Check in the app that a bot has no routines; then you can delete it yourself '
                            '(right-click the bot in the sidebar and choose Delete).') if drop else 'Nothing to clean up.', info=True))
     fleet += setup_items(diag)
-    leads = dict(preferences=[], memory={}, promises={}, skipped_questions={}, similar_requests=diag['fleet']['similar_requests_candidates'][:10],
+    leads = dict(preferences=[], memory={}, promises={}, stalls={}, chat_language={}, skipped_questions={}, similar_requests=diag['fleet']['similar_requests_candidates'][:10],
                  other_bots_job=diag['fleet']['other_bots_job_candidates'][:10])
     for bid, b in diag['bots'].items():
         if b['memory'] and (b['memory']['time_sensitive'] or b['memory']['near_duplicates']):
             leads['memory'][bid] = dict(time_sensitive=b['memory']['time_sensitive'], near_duplicates=b['memory']['near_duplicates'])
         if b['promise_candidates']: leads['promises'][bid] = b['promise_candidates']
+        if b.get('stall_candidates'): leads['stalls'][bid] = b['stall_candidates'][:5]
+        if b.get('language_mismatch'): leads['chat_language'][bid] = b['language_mismatch']
         if b['skipped_questions']['count']:
             leads['skipped_questions'][bid] = dict(count=b['skipped_questions']['count'], questions=b['skipped_questions']['questions'])
         leads['preferences'] += [norm(txt(k))[:120] for k in b['preferences'] if k in jin]
@@ -328,6 +352,8 @@ def finalize(a):
             g = f.get('group') or {}
             if 'TODO' in str(g) or not g.get('lead') or not g.get('members') or g.get('blocked') != 'ask_user':
                 warns.append(where + ': group needs project, lead, each member\'s part and blocked = ask_user (setup.md)')
+        for ls in f.get('lessons') or []:
+            if 'TODO' in str(ls.get('copy', '')): warns.append(where + ': a lesson text still has TODO')
         rv = f.get('review')
         if rv is not None and 'TODO' in str(rv.get('copy') if isinstance(rv, dict) else rv):
             warns.append(where + ': review routine text still has TODO')
@@ -373,8 +399,13 @@ def finalize(a):
     if not draft.get('top3_locked'):
         draft['top3'] = [dict(text=f.get('short') or f['title'], ref=r) for _, _, r, f in cands[:3]]
     draft.pop('leads', None); draft.pop('_skeleton', None)
-    for _, f in iter_findings(draft):   # an optional review routine the host didn't write is dropped
+    for _, f in iter_findings(draft):   # an optional review routine or lesson the host didn't write is dropped
         if 'review' in f and not (isinstance(f['review'], dict) and str(f['review'].get('copy') or '').strip()): f.pop('review')
+        if 'lessons' in f:
+            f['lessons'] = [x for x in f['lessons'] if isinstance(x, dict) and str(x.get('copy') or '').strip()]
+            if not f['lessons']: f.pop('lessons')
+    # rows in status order (needs work, clean-up, fine), keeping the draft's order within a status
+    draft['bots'] = [b for _, b in sorted(enumerate(draft['bots']), key=lambda ib: (STATUS_ORDER.get(ib[1].get('status'), 3), ib[0]))]
     for b in draft.get('bots', []):
         b.pop('fix_candidates', None)
         for f in b.get('findings', []) + b.get('more', []): f.pop('fix_check_omitted', None)
