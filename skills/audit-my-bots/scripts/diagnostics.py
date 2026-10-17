@@ -18,9 +18,12 @@ INCIDENT_MIN = 60
 WAIT_H = 6
 FIX_MAX = 12
 SESSION_GAP_H = 6   # incidents further apart than this are separate occasions
+FADE_GAP = 7        # "used regularly": a typical gap of at most this many days between active days
 RATE_FLOOR = 0.01   # "3+ incidents" makes a group strong only at 1 incident per 100 real requests or more
 NEW_DAYS = 14       # a bot younger than this, that joined in the later half of the history, is too new to judge
-RELAY_DAYS = 3      # a pasted bot answer counts as a hand-off when pasted within this many days
+RELAY_DAYS = 3
+HANDOFF_LONG = 600  # bot-to-bot messages this long (median), or mostly repeating the previous one, suggest a short format
+HANDOFF_PASTE = 400 # pasted hand-offs this long (median) suggest it too      # a pasted bot answer counts as a hand-off when pasted within this many days
 # Sites with a plugin in the app (Connect apps). Matched on the host name only.
 SERVICES = {'mail.google.com': 'Gmail', 'gmail.com': 'Gmail', 'calendar.google.com': 'Google Calendar',
             'drive.google.com': 'Google Drive', 'docs.google.com': 'Google Drive', 'slack.com': 'Slack', 'notion.so': 'Notion',
@@ -116,14 +119,18 @@ def main():
         first = min(stamps) if stamps else now
         last_user = P(users[-1]['ts']) if users else None
         runs = sorted(P(e['ts']) for e in ev if e.get('kind') == 'routine' and e.get('ts'))
-        # Use = typed requests or routine runs: a bot that works by routine is in use even if the user never types.
-        last_use = max([x for x in (last_user, runs[-1] if runs else None) if x], default=None)
+        handoffs_in = sorted(P(e['ts']) for e in ev if e.get('kind') == 'agent' and e.get('ts'))
+        # Use = typed requests, routine runs or hand-offs from other bots: a bot that works by routine or for other
+        # bots is in use even if the user never types to it.
+        last_use = max([x for x in (last_user, runs[-1] if runs else None, handoffs_in[-1] if handoffs_in else None) if x], default=None)
         age = days_between(first, now); idle = days_between(last_use, now) if last_use else age
         idle_typed = days_between(last_user, now) if last_user else age
         udays = sorted({P(e['ts']).date() for e in users})
         typical_gap = median([(b - a).days for a, b in zip(udays, udays[1:])])
         # its own rhythm: a monthly bot is not idle after three weeks (needs 2+ active days to know the rhythm)
         within_rhythm = bool(typical_gap) and idle <= 1.5 * typical_gap + 1
+        # a habit that stopped: used regularly (5+ days, typically at most a week apart), now idle far beyond that rhythm
+        faded = len(udays) >= 5 and typical_gap is not None and typical_gap <= FADE_GAP and idle >= max(14, 4 * typical_gap)
         too_new = age < NEW_DAYS and age < fleet_age / 2
         run_gap_days = median([days_between(x, y) for x, y in zip(runs, runs[1:])]) or 0
         routine_active = bool(runs) and days_between(runs[-1], now) <= max(3, 2 * run_gap_days)
@@ -187,6 +194,8 @@ def main():
             if len(cand) > len(keep):
                 g['fix_candidates_omitted'] = dict(count=len(cand) - len(keep), first=cand[0]['ts'],
                                                    last=max(c['ts'] for c in cand if c['id'] not in keep))
+            # came back after a possible fix: a candidate with an incident of this group after it (unconfirmed)
+            g['came_back_candidate'] = any(c['incidents_after'] for c in g['fix_candidates'])
             g['strong'] = g['repeated'] and ((g['incidents'] >= 3 and g['rate'] >= RATE_FLOOR) or g['rate'] >= 0.05) \
                 and any(c != 'low' for c in g['confidences'])
             g.pop('incident_times')
@@ -294,8 +303,8 @@ def main():
             coverage=tl.get('coverage'), corrections=len(cors), incidents=incidents, groups=groups, preferences=prefs,
             fix_events=fixes, fix_candidates=[f for f in fixes if any(f['id'] in {c['id'] for c in g['fix_candidates']} for g in groups.values())], waits=waits, skipped_questions=dict(count=len(skips), questions=[s['text'][:120] for s in skips][:10]),
             promise_candidates=promises, memory=mem, repeated_requests=rep[:5],
-            routines_seen=len(runs), last_routine_run=runs[-1].strftime(FMT) if runs else None, routine_active=routine_active,
-            idle_typed_days=round(idle_typed, 1), typical_gap_days=typical_gap, within_rhythm=within_rhythm, too_new=too_new,
+            handoffs_received=len(handoffs_in), routines_seen=len(runs), last_routine_run=runs[-1].strftime(FMT) if runs else None, routine_active=routine_active,
+            idle_typed_days=round(idle_typed, 1), typical_gap_days=typical_gap, within_rhythm=within_rhythm, too_new=too_new, faded=faded,
             routine_cost=rcost, connector_candidates=connectors, memory_safety_rules=safety,
             group_chats={k: sorted(v) for k, v in groups_seen.items()})
     # ---- fleet: outage windows (waits overlapping in >= 2 bots)
@@ -344,10 +353,11 @@ def main():
         for e in tl['events']:
             if e['role'] != 'user' or not e.get('ts') or len(norm(e['text'])) < 80: continue
             t, gu = P(e['ts']), grams(e['text'])
-            for ob, msgs in botmsgs.items():
-                if ob == bid: continue
-                if any(t - dt.timedelta(days=RELAY_DAYS) <= bt <= t and len(gb & gu) / max(1, len(gb)) >= 0.6 for bt, gb in msgs):
-                    edges[(ob, bid)].append(dict(ts=e['ts'], text=norm(e['text'])[:80]))
+            # the pasted answer comes from the one bot message it matches best (templated answers look alike)
+            best = max(((len(gb & gu) / max(1, len(gb)), ob) for ob, msgs in botmsgs.items() if ob != bid
+                        for bt, gb in msgs if t - dt.timedelta(days=RELAY_DAYS) <= bt <= t), default=(0, None))
+            if best[0] >= 0.6:
+                edges[(best[1], bid)].append(dict(ts=e['ts'], text=norm(e['text'])[:80], chars=len(norm(e['text']))))
     shared = lambda x, y: bool(set(out['bots'][x]['group_chats']) & set(out['bots'][y]['group_chats']) - {''})
     strong_edges = {k: v for k, v in edges.items() if len({x['ts'][:10] for x in v}) >= 2 and not shared(*k)}
     comps = []
@@ -363,6 +373,25 @@ def main():
         order = sorted(c, key=lambda b: -flow[b])
         cands.append(dict(bots=order, bots_names=[names[b] for b in order], lead=lead, lead_name=names[lead], handoffs=es))
     out['fleet']['group_candidates'] = cands
+    # ---- fleet: long or repetitive hand-offs (bot-to-bot messages, or answers the user pastes) -> a fixed short format
+    byname = {v['name']: k for k, v in out['bots'].items()}
+    hand = []
+    for bid, tl in tls.items():
+        msgs = collections.defaultdict(list)
+        for e in tl['events']:
+            if e.get('kind') == 'agent' and e.get('sender') and norm(e.get('text')): msgs[e['sender']].append(norm(e['text']))
+        for snd, ms in msgs.items():
+            if len(ms) < 3: continue
+            rep_ = [jaccard(grams(x), grams(y)) for x, y in zip(ms, ms[1:])]
+            med, rpt = median([len(x) for x in ms]), sum(rep_) / len(rep_)
+            if med >= HANDOFF_LONG or (rpt >= 0.5 and med >= HANDOFF_PASTE / 2):   # short repeated pings are fine
+                hand.append(dict(via='bot_message', src_name=snd, to_name=names[bid], src=byname.get(snd), to=bid, messages=len(ms),
+                                 median_chars=int(med), repetitive=round(rpt, 2)))
+    for (x, y), v in strong_edges.items():
+        med = median([i['chars'] for i in v])
+        if med >= HANDOFF_PASTE:
+            hand.append(dict(via='pasted', src_name=names[x], to_name=names[y], src=x, to=y, messages=len(v), median_chars=int(med), repetitive=None))
+    out['fleet']['handoff_format_candidates'] = hand
     # ---- fleet: group chats with the same members (only groups seen in the saved chats)
     members = collections.defaultdict(set); gdays = collections.defaultdict(set)
     for bid, b in out['bots'].items():
@@ -375,9 +404,11 @@ def main():
     # ---- suggested status (references/criteria.md §2); the host bot may override with a stated reason
     for bid, b in out['bots'].items():
         reasons = []
-        if b['age_days'] >= 3 and b['idle_days'] >= max(3, b['age_days'] / 2) and b['share'] < 0.05 \
+        if b['age_days'] >= 3 and b['idle_days'] >= max(3, b['age_days'] / 2) and (b['share'] < 0.05 or b['faded']) \
                 and not b['too_new'] and not b['within_rhythm']:
-            st = 'red'; reasons.append('barely used: idle {idle_days} of {age_days} days, under 5% of use'.format(**b))
+            st = 'red'
+            reasons.append('barely used: idle {idle_days} of {age_days} days, under 5% of use'.format(**b) if b['share'] < 0.05 else
+                           'stopped: used about every {typical_gap_days} days, now idle {idle_days} days'.format(**b))
         else:
             strong = [t for t, g in b['groups'].items() if g['strong']]
             own_waits = [w for w in b['waits'] if not w['fleet_outage']]

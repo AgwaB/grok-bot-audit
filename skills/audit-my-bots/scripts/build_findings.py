@@ -111,6 +111,10 @@ def skeleton(a):
             if g.get('fix_candidates'):
                 # unverified: the host bot decides whether any of these is about this problem (references/writing.md)
                 item['fix_check'] = g['fix_candidates']
+            if g.get('came_back_candidate'):
+                # optional, next to the rule text: a low-cadence routine in this bot that reviews its rules (setup.md).
+                # Empty until the host confirms that a fix about this problem came back and writes the routine text.
+                item['review'] = dict(cadence_days=14, copy='')
             if g.get('fix_candidates_omitted'):
                 # more saves than are listed, all with no incident after them: the timeline has the rest (kind memory_write)
                 item['fix_check_omitted'] = g['fix_candidates_omitted']
@@ -127,7 +131,8 @@ def skeleton(a):
             empty.append(bid)
             findings.append(dict(title='No saved job description', now=[], fix='See the shared job-text item.',
                                  see='fleet-1'))
-        why = {'red': 'Barely used for most of its life, and a very small part of your overall use.',
+        why = {'red': 'Used regularly before, but quiet for far longer than usual.' if b.get('faded') and b['share'] >= 0.05 else
+                      'Barely used for most of its life, and a very small part of your overall use.',
                'yellow': 'The same correction keeps coming back.' if any(g['strong'] for g in b['groups'].values())
                          else 'Some requests went unanswered.',
                'green': 'No repeated problem.'}[b['status_suggested']]
@@ -187,7 +192,8 @@ def skeleton(a):
     n = sum(len(b['findings']) for b in bots)
     print(f'draft: {len(bots)} bots, {n} bot findings, {len(fleet)} fleet items -> {os.path.join(a.work, "findings_draft.json")}')
 
-SETUP_KINDS = ('group', 'redundant_groups', 'connector', 'safety_rules', 'routine_cost')
+SETUP_KINDS = ('group', 'redundant_groups', 'handoff_format', 'connector', 'safety_rules', 'routine_cost')
+HANDOFF_FIELDS = ['goal', 'where', 'done_when', 'waiting_on']   # the fixed short hand-off format (setup.md)
 
 def setup_items(diag):
     """Setup proposals (references/setup.md), after the keep item; the report shows them in their own section.
@@ -195,12 +201,15 @@ def setup_items(diag):
     out, B = [], diag['bots']
     for g in diag['fleet'].get('group_candidates', []):
         days = sorted({d for h in g['handoffs'] for d in h['days']})
+        # one group per project: the chain's bots in order, a lead, each bot's part, and a "blocked -> ask the user" step
         out.append(dict(kind='group', title='You pass work between ' + ', '.join(g['bots_names']) + ' by hand',
                         now=[dict(date='', text=f"{h['src_name']} -> {h['to_name']}: pasted on {', '.join(md(d) for d in h['days'])}")
                              for h in g['handoffs']],
-                        group=dict(bots=g['bots_names'], lead=g['lead_name']),
-                        fix=f"A group chat with these bots could pass the work along, with {g['lead_name']} starting each round. TODO steps (setup.md)",
-                        copy='TODO first message for the group: who does what, who owns the next step', copy_kind='group', needs_review=True,
+                        group=dict(project='TODO project name', lead=g['lead_name'], order=g['bots_names'],
+                                   members=[dict(bot=n, part='TODO what this bot does') for n in g['bots_names']], blocked='ask_user'),
+                        fix=f"A group chat for this project could pass the work along, with {g['lead_name']} leading. TODO steps (setup.md)",
+                        copy='TODO first message for the group: the project, each bot\'s part, who leads, and "if blocked, stop and ask me"',
+                        copy_kind='group', needs_review=True,
                         short='TODO short line', score=dict(impact=impact_from(0, days=len(days), bots=len(g['bots'])), confidence='medium',
                                                             effort=2, reversibility=1.0, basis=f"{sum(h['count'] for h in g['handoffs'])} pasted hand-offs on {len(days)} days")))
     for r in diag['fleet'].get('redundant_groups', []):
@@ -208,6 +217,18 @@ def setup_items(diag):
                         now=[dict(date='', text=f"{gname}: {', '.join(r['bots'])}; last used {md(r['last'][gname])}") for gname in r['groups']],
                         fix='TODO how to keep one group for this work (setup.md)', needs_review=True, short='TODO short line',
                         score=dict(impact=1, confidence='medium', effort=1, reversibility=0.8, basis='same members')))
+    hf = diag['fleet'].get('handoff_format_candidates', [])
+    if hf:
+        out.append(dict(kind='handoff_format', title='Hand-offs between bots are long or repeat themselves',
+                        now=[dict(date='', text=f"{h['src_name']} -> {h['to_name']} ({'bot message' if h['via'] == 'bot_message' else 'pasted by you'}): "
+                                                f"{h['messages']} hand-offs, about {h['median_chars']} characters each"
+                                                + (f", {round(100 * h['repetitive'])}% alike" if h.get('repetitive') else '')) for h in hf[:4]],
+                        format=list(HANDOFF_FIELDS),
+                        fix='Agree on one short hand-off format for these bots. TODO how (setup.md)',
+                        copy='TODO the format, one line per field: goal / where (paths or links) / done when / waiting on',
+                        copy_kind='memory', needs_review=True, short='TODO short line',
+                        score=dict(impact=impact_from(0, bots=len({x for h in hf for x in (h['src_name'], h['to_name'])})), confidence='medium',
+                                   effort=1, reversibility=1.0, basis=f"{len(hf)} long or repetitive hand-off pairs")))
     for bid, b in B.items():
         if b['status_suggested'] == 'red': continue   # no setup advice for a bot suggested for clean-up
         for c in b.get('connector_candidates', []):
@@ -303,6 +324,13 @@ def finalize(a):
         if isinstance(c, list) and not all(isinstance(x, dict) and x.get('bot') and x.get('text') for x in c):
             errors.append(where + ': "copy" as a list needs {"bot", "text"} in every item')
         if any('TODO' in t for t in copy_texts(f)): warns.append(where + ': copy still has TODO')
+        if f.get('kind') == 'group':
+            g = f.get('group') or {}
+            if 'TODO' in str(g) or not g.get('lead') or not g.get('members') or g.get('blocked') != 'ask_user':
+                warns.append(where + ': group needs project, lead, each member\'s part and blocked = ask_user (setup.md)')
+        rv = f.get('review')
+        if rv is not None and 'TODO' in str(rv.get('copy') if isinstance(rv, dict) else rv):
+            warns.append(where + ': review routine text still has TODO')
         if any('TODO' in T_(f.get(k)) for k in ('title', 'fix', 'short')): warns.append(where + ': title, fix or short still has TODO')
         for e in f.get('now', []):
             q = e.get('quote')
@@ -345,6 +373,8 @@ def finalize(a):
     if not draft.get('top3_locked'):
         draft['top3'] = [dict(text=f.get('short') or f['title'], ref=r) for _, _, r, f in cands[:3]]
     draft.pop('leads', None); draft.pop('_skeleton', None)
+    for _, f in iter_findings(draft):   # an optional review routine the host didn't write is dropped
+        if 'review' in f and not (isinstance(f['review'], dict) and str(f['review'].get('copy') or '').strip()): f.pop('review')
     for b in draft.get('bots', []):
         b.pop('fix_candidates', None)
         for f in b.get('findings', []) + b.get('more', []): f.pop('fix_check_omitted', None)

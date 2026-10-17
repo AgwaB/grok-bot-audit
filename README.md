@@ -56,7 +56,7 @@ the fonts of the machine that made it.
 | `skills/audit-my-bots/SKILL.md` | the end-to-end procedure the bot follows, including the safety rules |
 | `skills/audit-my-bots/scripts/sessions.py` | list bots (name and description only), save transcript pages, build per-bot timelines |
 | `skills/audit-my-bots/scripts/judge_inputs.py` | wide filter for messages that might be corrections; exports items for the rubric |
-| `skills/audit-my-bots/scripts/diagnostics.py` | usage (typed requests and routine runs), correction groups, suggested status, outages, memory, repeated requests, overlap leads, setup checks (group chats, plugins, safety rules in memory, routine frequency) |
+| `skills/audit-my-bots/scripts/diagnostics.py` | usage (typed requests and routine runs), correction groups, suggested status, outages, memory, repeated requests, overlap leads, setup checks (group chats per project, hand-off format, plugins, safety rules in memory, routine frequency) |
 | `skills/audit-my-bots/scripts/build_findings.py` | `skeleton`: a draft findings file with verbatim evidence; `finalize`: checks quotes word for word, scores, caps 3 per bot, picks the top 3 |
 | `skills/audit-my-bots/scripts/make_report.py` | renders the HTML and PDF (headless Chrome, temporary profile); `summary.json` and `--previous` for the weekly re-check |
 | `skills/audit-my-bots/references/` | correction rubric, criteria, findings schema, language cues, setup checks, design notes |

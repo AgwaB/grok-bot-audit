@@ -70,3 +70,19 @@
   log commands from the first one.
 - Eval grader: the chat-language check measures prose only (bot names, tables, code spans, paths, attachment lines and
   test headings are left out); a dash in the Proposals column counts as 0.
+- Iteration 6: references carry no test-fixture answers (generic invented examples); the paste test also asks for the
+  same kind of action, so unrelated misreads are not one shared cause; clean-up counts routine runs as use, respects a
+  bot's own rhythm (a monthly bot is not idle after a month) and gives no verdict on a bot too new to judge; the "3+
+  incidents" rule has a rate floor for very busy bots; judge mode ignores code and links, treats mixed scripts and
+  accented Latin chats as not English, and stale-memory and promise leads also work without words; each run gets a new
+  private work folder; the weekly re-check routine is report-only, quiet when nothing changed (`summary.json`,
+  `make_report.py --previous`) and safe to re-run; text for another bot is a message it is asked to remember, not a
+  description field; setup checks in their own report section (`references/setup.md`): group chats for hand-offs the
+  user does by hand, group chats with the same members, plugins instead of the browser, safety rules kept only in
+  memory, routines that run very often.
+- Iteration 7: a stopped habit (used regularly, now idle far beyond its rhythm) is a clean-up candidate at any share;
+  messages from other bots count as use; hand-offs that are long or repeat themselves get a fixed short format (goal,
+  where, done when, waiting on); a mistake that came back after a fix may get an optional low-cadence rule-review
+  routine that stays quiet when nothing is new; group suggestions are one group per project with a lead bot, members in
+  order and a "blocked: ask the user" step, and finalize checks that structure; the pasted answer is matched to the one
+  bot message it fits best.

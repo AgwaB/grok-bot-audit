@@ -106,7 +106,8 @@ one sentence.
 - **Skipped questions:** one or two mean nothing. Several of the same kind from one bot (it keeps asking which next
   step, or for permission it didn't need) can justify a rule like "go ahead with the recommended option and say what
   you did".
-- **Setup items** (`kind` group, redundant_groups, connector, safety_rules, routine_cost): `setup.md`.
+- **Setup items** (`kind` group, redundant_groups, handoff_format, connector, safety_rules, routine_cost) and a
+  correction finding's optional `review` routine: `setup.md`.
 - **Shared causes:** one fleet item; each bot points to it with `"see": "fleet-N"`. When each bot needs its own text,
   `copy` is a list of `{"bot", "text"}`.
 - **No proposals at all:** the report hides the top-3 section. In the chat, say in one line that there is nothing to

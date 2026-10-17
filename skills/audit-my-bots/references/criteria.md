@@ -33,16 +33,17 @@ and the memory block the app shows the bot. No external APIs, no logins.
 - **Unanswered request**: a real request with no bot reply for 6 hours or more (a lower bound, taken from the next timestamp).
   A request that is the last message in the data is not counted: the bot may not have had time to answer.
   If several bots go quiet in the same window, it is a fleet outage (usually a plan limit), not a problem with one bot.
-- **Age** = now minus the first message. **Idle** = now minus the last use: a real request or a routine run (a bot
-  that works by routine is in use even if the user never types to it). **Share** = the bot's real requests ÷ all real requests.
+- **Age** = now minus the first message. **Idle** = now minus the last use: a real request, a routine run or a message
+  from another bot (a bot that works by routine or for other bots is in use even if the user never types to it). **Share** = the bot's real requests ÷ all real requests.
 - **Rhythm** = the typical gap between the days the user typed to it (needs 2+ such days). **Within its rhythm**: idle ≤ 1.5 × that gap + 1 day.
+- **Stopped habit**: used on 5+ days with a rhythm of a week or less, and now idle ≥ max(14 days, 4 × that rhythm).
 - **Too new to judge**: age under 14 days, and the bot started in the later half of the history covered (a bot added
   recently to an older fleet). It gets no clean-up verdict; its other checks still run.
 
 ## 2. Status (first match wins)
 | status | rule |
 |---|---|
-| Clean up (`red`) | Age ≥ 3 days, idle ≥ max(3 days, half its age), share < 5%, not within its rhythm, and not too new to judge. *Or* its whole job is already done by another bot that is in use, and its history shows no use of its own. |
+| Clean up (`red`) | Age ≥ 3 days, idle ≥ max(3 days, half its age), share < 5% or a stopped habit (any share), not within its rhythm, and not too new to judge. *Or* its whole job is already done by another bot that is in use, and its history shows no use of its own. |
 | Needs work (`yellow`) | A strong repeated correction with a shared cause that is not fixed; *or* unanswered requests caused by the bot itself (not a fleet outage); *or* a safety problem visible in its chats (for example, it printed another bot's internal settings). |
 | Fine (`green`) | Everything else. An empty description, a weak repeated correction, a stated preference or another lead (section 4) can still produce a proposal, but it doesn't change the status. A one-off correction never does: no rules from one mistake. |
 

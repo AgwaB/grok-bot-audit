@@ -85,6 +85,7 @@ def replay(a):
 
 # A group-chat turn starts with the app's tag ([Group chat: "name"] or [group chat]); the tag is not typed text.
 GROUP_RE = re.compile(r'\s*\[group chat(?::\s*"([^"]*)")?\]\s*', re.I)
+AGENT_RE = re.compile(r"A message just arrived from another of your user's agents: (.+?) \(id: [^)]+\)")
 BROWSER_RE = re.compile(r'browser|computer|navigate|playwright|chrome', re.I)
 HOST_RE = re.compile(r'https?://([A-Za-z0-9.-]+\.[A-Za-z]{2,})')
 
@@ -129,7 +130,17 @@ def parse_one(d):
                 elif k == 'skipped_question':
                     q = re.search(r'without responding \((.*?)\)\. Treat', t, re.S)
                     events.append(dict(role='app', kind='skipped_question', ts=ts or last_ts, text=norm(q.group(1)).strip('"') if q else ''))
-                elif k in ('routine', 'agent', 'background_result', 'form_submit'):
+                elif k == 'agent':
+                    # a message from another bot: keep the sender's name and the message (for the hand-off checks)
+                    m2 = AGENT_RE.search(t)
+                    body = ''
+                    if m2:
+                        rest = t[m2.end():]
+                        i = rest.find('\n' + m2.group(1) + ': ')
+                        body = rest[i + len(m2.group(1)) + 3:] if i >= 0 else ''
+                        body = re.split(r'\n\s*If it needs an action|</user_query>', body)[0].strip()
+                    events.append(dict(role='app', kind='agent', ts=ts or last_ts, text=body[:3000], sender=m2.group(1) if m2 else ''))
+                elif k in ('routine', 'background_result', 'form_submit'):
                     events.append(dict(role='app', kind=k, ts=ts or last_ts, text=''))
             elif role == 'assistant' and ty == 'tool_use':
                 inp = tool_input(x)

@@ -38,7 +38,7 @@ def convo(script):
         t = mf.BASE + dt.timedelta(days=d, hours=h - 9, minutes=m)
         if who == 'u': out.append(mf.user(t, text, n)); n += 1
         elif who == 'b': out += mf.bot(text, k); k += 1
-        elif who == 'routine': out.append(mf.hidden(t, '[routine] ' + text))
+        elif who == 'routine': out.append(mf.hidden(t, text[1:] if text.startswith('\x00') else '[routine] ' + text))   # \x00: a full hidden prompt
         elif who == 'skip': out.append(mf.hidden(t, f'Earlier you prompted the user and they moved on without responding ("{text}"). Treat it as skipped.'))
         elif who == 'mem': out.append(mf.memory(t, text))
         elif who == 'tool': out.append(dict(role='assistant', message=dict(content=[dict(type='tool_use', id=f'x{k}', name=text[0], input=text[1])]))); k += 1
@@ -201,7 +201,10 @@ def test_setup(root):
         b.pop('needs_review', None); b['issue'] = 'Fine'
         for f in b['findings']: f.pop('needs_review', None); f.pop('fix_check', None)
     for f in draft['fleet']:
-        f.pop('needs_review', None)
+        f.pop('needs_review', None); f.pop('confirm', None)
+        if f.get('kind') == 'group':
+            f['group']['project'] = 'Fake project'
+            for m in f['group']['members']: m['part'] = 'Fake part'
         for k in ('fix', 'short', 'title'):
             if 'TODO' in str(f.get(k, '')): f[k] = 'Test text (fake).'
         if isinstance(f.get('copy'), str) and 'TODO' in f['copy']: f['copy'] = 'Test copy (fake).'

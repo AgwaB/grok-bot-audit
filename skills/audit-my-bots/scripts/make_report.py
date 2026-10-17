@@ -32,7 +32,7 @@ UI_DEFAULT = {
     'setup': 'Your setup', 'setup_h': 'Setup', 'setup_iss': 'Groups, plugins, routines, safety rules',   # only with setup items
     'fix': 'Fix', 'apply': 'Apply', 'copy': 'Copy', 'copied': 'Copied',
     'kind': {'description': 'Text for the description', 'memory': 'Text to send it to remember', 'routine': 'Text for the routine',
-             'group': "Text for the group's first message", 'other': 'Text to add'},
+             'group': "Text for the group's first message", 'review': 'Optional: a routine that reviews this rule', 'other': 'Text to add'},
     'src': {'memory': 'Memory', 'description': 'Description'},
     'why': 'Why this status', 'improving': 'Already improving, nothing to do', 'more': 'More ({n})', 'see': 'See: {ref}',
     'info': 'For your information', 'collapse': 'Collapse', 'expand': 'Show proposals ({n})', 'nothing': 'Nothing major to fix.',
@@ -275,6 +275,10 @@ def finding(f, bot_name, anchor, n):
                      + (f' <b class="cb">{E(T(x.get("bot")))}</b>' if isinstance(x, dict) and x.get('bot') else '')
                      + f'</span><button class="copy" type="button">{E(t["copy"])}</button></div>'
                      f'<div class="t">{E(T(x.get("text") if isinstance(x, dict) else x))}</div></div>' for x in items)
+    rv = f.get('review')
+    if isinstance(rv, dict) and str(rv.get('copy') or '').strip():   # optional rule-review routine next to the rule text
+        cp += (f'<div class="cp"><div class="k"><span>{E(t["kind"].get("review", ""))}</span><button class="copy" type="button">'
+               f'{E(t["copy"])}</button></div><div class="t">{E(T(rv["copy"]))}</div></div>')
     passive = bool(f.get('see') or f.get('info'))
     ap = '' if passive else (f'<label class="ap"><input type="checkbox" class="apply" '
                              f'data-bot="{E(bot_name)}" data-no="{n}">{E(t["apply"])}</label>')
@@ -315,7 +319,7 @@ def has_quote(d):
     return any(isinstance(e, dict) and e.get('quote') or isinstance(e, str) and '"' in e
                for _, f in all_findings(d) for e in f.get('now', []))
 
-SETUP_KINDS = ('group', 'redundant_groups', 'connector', 'safety_rules', 'routine_cost')
+SETUP_KINDS = ('group', 'redundant_groups', 'handoff_format', 'connector', 'safety_rules', 'routine_cost')
 
 def is_setup(f):
     return f.get('kind') in SETUP_KINDS
