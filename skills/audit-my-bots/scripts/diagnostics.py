@@ -16,7 +16,8 @@ FMT = '%Y-%m-%d %H:%M'
 P = lambda s: dt.datetime.strptime(s, FMT)
 INCIDENT_MIN = 60
 WAIT_H = 6
-FIX_MAX = 6
+FIX_MAX = 8
+SESSION_GAP_H = 6   # incidents further apart than this are separate occasions
 
 def days_between(a, b):
     return (b - a).total_seconds() / 86400
@@ -62,22 +63,41 @@ def main():
         fixes = [dict(ts=e['ts'], kind='memory_write' if e.get('kind') == 'memory_write' else 'bot_said',
                       text=norm(e['text'])[:200]) for e in ev
                  if e.get('ts') and ((e['role'] == 'bot' and FIX.search(e['text'] or '')) or e.get('kind') == 'memory_write')]
+        # promises of a lasting change that the judge marked on a correction's reply (any language)
+        fixes += [dict(ts=jin[k]['ts'], kind='bot_promised', text=norm(jin[k].get('next_bot', ''))[-200:])
+                  for k, v in labels.items() if k.startswith(bid + ':') and v.get('fix_promised') and k in jin and jin[k].get('ts')]
+        fixes.sort(key=lambda f: f['ts'])
+        user_days = sorted({e['ts'][:10] for e in users})
         groups = {}
         for inc in incidents:
-            g = groups.setdefault(inc['topic'], dict(incidents=0, days=set(), keys=[], first=inc['first'], last=None, confidences=[]))
+            g = groups.setdefault(inc['topic'], dict(incidents=0, days=set(), sessions=0, keys=[], first=inc['first'], last=None,
+                                                     confidences=[], incident_times=[]))
+            if not g['last'] or not inc['first'] or (P(inc['first']) - P(g['last'])).total_seconds() > SESSION_GAP_H * 3600:
+                g['sessions'] += 1
             g['incidents'] += 1; g['days'].add((inc['first'] or '')[:10]); g['keys'] += inc['keys']
-            g['last'] = inc['last']; g['confidences'].append(inc['confidence'])
+            g['last'] = inc['last']; g['confidences'].append(inc['confidence']); g['incident_times'].append(inc['first'])
         n_real = max(1, len(users))
         for topic, g in groups.items():
             g['days'] = sorted(d for d in g['days'] if d)
             g['rate'] = round(g['incidents'] / n_real, 3)
-            g['repeated'] = (g['incidents'] >= 2 and len(g['days']) >= 2) or g['incidents'] >= 3
-            # Fix candidates: memory saves and announced fixes in the same bot after the group's first incident.
-            # Whether one is about this group's problem can't be told from words (memory and chats may be in different
-            # languages), so they are candidates only: they change neither status nor impact until the host bot confirms.
-            g['fix_candidates_between'] = [f for f in fixes if g['first'] and g['last'] and g['first'] <= f['ts'] < g['last']][-FIX_MAX:]
-            g['fix_candidates_after_last'] = [f for f in fixes if g['last'] and f['ts'] >= g['last']][:FIX_MAX]
+            # Repeated = 2+ incidents on 2+ separate occasions (gaps over SESSION_GAP_H). Incidents that all fall in one
+            # working session are steering of one task (one_session), never a repeated problem on their own.
+            g['one_session'] = g['sessions'] < 2
+            g['repeated'] = g['incidents'] >= 2 and g['sessions'] >= 2
+            # Fix candidates: memory saves, announced fixes and judged promises in the same bot from the group's first
+            # incident on. Whether one is about this group's problem can't be told from words, so they are candidates:
+            # they change neither status nor impact until the host bot confirms. Each carries the facts the decision
+            # needs: incidents of this group after it, and days of use after it.
+            cand = []
+            for f in fixes:
+                if not g['first'] or f['ts'] < g['first']: continue
+                cand.append(dict(f, incidents_after=sum(1 for t in g['incident_times'] if t and t > f['ts']),
+                                 active_days_after=sum(1 for d in user_days if d > f['ts'][:10])))
+            between = [c for c in cand if c['incidents_after']][-FIX_MAX:]
+            after = [c for c in cand if not c['incidents_after']][:FIX_MAX]
+            g['fix_candidates'] = between + after
             g['strong'] = g['repeated'] and (g['incidents'] >= 3 or g['rate'] >= 0.05) and any(c != 'low' for c in g['confidences'])
+            g.pop('incident_times')
         prefs = [k for k, v in labels.items() if k.startswith(bid + ':') and v.get('type') == 'preference']
         # ---- waits: user message(s) with no bot reply for >= WAIT_H hours (lower bound from the next timestamp)
         waits = []; k = 0; seq = [e for e in ev if e['role'] in ('user', 'bot')]
@@ -88,8 +108,8 @@ def main():
             while j + 1 < len(seq) and seq[j + 1]['role'] == 'user': j += 1
             nxt_bot = seq[j + 1] if j + 1 < len(seq) else None
             t0 = P(seq[k]['ts'])
-            if nxt_bot is None:
-                until, hours = None, days_between(t0, now) * 24
+            if nxt_bot is None:   # the last message in the data: the bot may not have had time to answer
+                k = j + 1; continue
             else:
                 last_seen = max(P(x['ts']) for x in seq[k:j + 2] if x.get('ts'))
                 until, hours = last_seen.strftime(FMT), (last_seen - t0).total_seconds() / 3600

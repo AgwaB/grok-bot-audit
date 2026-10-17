@@ -120,7 +120,7 @@ def main():
         # 2. languages
         r = run(f'{S}/judge_inputs.py', '--work', W)
         ji = json.load(open(f'{W}/judge_inputs.json'))
-        check(KO_FIX in {x['user'] for x in ji} and f'{NAMES[C]}: 1 (all (no cue matched))' in r.stdout,
+        check(KO_FIX in {x['user'] for x in ji} and f'{NAMES[C]}: 1 items (all (no cue matched))' in r.stdout,
               '2/3. a bot with no cue match gets all its replies judged (no --all needed)')
         run(f'{S}/judge_inputs.py', '--work', W, '--all')
         ji = json.load(open(f'{W}/judge_inputs.json'))
@@ -157,7 +157,7 @@ def main():
         check(not d['bots'][A]['repeated_requests'], '4. no false routine candidate from attachment notices')
         g = d['bots'][D]['groups']['format_length']
         check(d['bots'][D]['status_suggested'] == 'yellow' and 'possibly_fixed' not in g
-              and any('email' in f['text'] for f in g['fix_candidates_between']), '9. an unrelated memory save is a fix candidate, not a fix')
+              and any('email' in f['text'] for f in g['fix_candidates']), '9. an unrelated memory save is a fix candidate, not a fix')
         # 5. skipped questions
         run(f'{S}/build_findings.py', 'skeleton', '--work', W, '--lang', 'en')
         dr = json.load(open(f'{W}/findings_draft.json'))

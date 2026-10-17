@@ -13,8 +13,9 @@
       W/transcripts/<id>/page_*.txt -> W/timelines/<id>.json (events, memory block, coverage).
   python3 sessions.py replay --work W [--from DIR] [--self AGENT_ID]
       Testing only (tests/EVAL.md): instead of steps 1-2, copy DIR/bots.json and DIR/transcripts/<id>/page_*.txt
-      (pre-saved pages) into W, plus DIR/replay.json ({"now": "YYYY-MM-DD HH:MM"}) if present. DIR defaults to
-      $AUDIT_REPLAY_DIR.
+      (pre-saved pages) into W, plus DIR/replay.json ({"now": "YYYY-MM-DD HH:MM", "self": "<id>"}) if present. DIR
+      defaults to $AUDIT_REPLAY_DIR. The bot skipped as "self" is --self, else replay.json's "self", else none: every
+      other listed bot is audited.
 
 Read-only on bot data. Never opens anything except profile.json and the saved pages.
 """
@@ -62,7 +63,8 @@ def replay(a):
     if not src or not os.path.isfile(os.path.join(src, 'bots.json')):
         sys.exit('replay: give --from DIR or set AUDIT_REPLAY_DIR (a folder with bots.json and transcripts/<id>/page_*.txt)')
     os.makedirs(a.work, exist_ok=True)
-    bots = [b for b in load_json(os.path.join(src, 'bots.json'), []) if b['id'] != a.self]
+    me = a.self or load_json(os.path.join(src, 'replay.json'), {}).get('self')
+    bots = [b for b in load_json(os.path.join(src, 'bots.json'), []) if b['id'] != me]
     dump_json(bots, os.path.join(a.work, 'bots.json'))
     if os.path.isfile(os.path.join(src, 'replay.json')):
         shutil.copyfile(os.path.join(src, 'replay.json'), os.path.join(a.work, 'replay.json'))

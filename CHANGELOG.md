@@ -27,5 +27,16 @@
 - Judging: mode chosen per bot by its chats' language; question cards and the starting request in each item; a compact
   `--list` view and TSV labels (`--label`); a bot with no cue match gets all its replies judged.
 - Writing guide (`references/writing.md`); an all-Fine report hides the empty top-3 section; no duplicated fleet note.
+- Consistency between runs: repeated corrections count separate occasions (6+ hours apart), so one long session is
+  never "repeated"; fix candidates carry the incidents and days of use after them, and "improving" needs no incident
+  after the fix and 2+ later days; an explicit decision procedure for shared causes, merging, normal iteration and
+  status overrides (`criteria.md` §5).
+- Judging: `--auto` picks the mode per bot from the share of its user messages in Latin letters (printed per bot);
+  `--list` shows each bot message once; labels.tsv has fixed columns with a `user_start` check against off-by-one
+  mistakes and a `promised` column (in-chat promises become fix candidates); unlisted items are `none`.
+- finalize: leftover skeleton placeholders and English `ui` labels are flagged in a non-English report; an evidence line
+  with both quote and text is an error. Skeleton quotes whole sentences and uses one date format.
+- A request that is the last message in the data isn't counted as unanswered; replay skips only a recorded `self`.
+- A fixed recipe for the chat message and the follow-up question; scratch files go in `$W/tmp`.
 - Offline end-to-end and regression tests on synthetic fixtures, and a skill eval kit: replay mode
   (`sessions.py replay`), scenarios and an objective grader (`tests/EVAL.md`).

@@ -59,6 +59,29 @@ def copy_texts(f):
         return [str((x or {}).get('text') or '') if isinstance(x, dict) else str(x or '') for x in c]
     return [str(c)] if c else []
 
+SENT_RE = re.compile(r'(?<=[.!?\u3002\uff01\uff1f])\s+|\n+')
+
+def md(ts):
+    """'YYYY-MM-DD…' -> 'MM/DD' (the skeleton's one date format; the host bot may localize it)."""
+    return ts[5:10].replace('-', '/') if ts and len(ts) >= 10 else ''
+
+def pick_quote(text, evidence='', n=200):
+    """Evidence quote for a message: the sentence holding the judge's evidence words if found, else the whole message
+    if short, else its first sentences up to n characters (never cut mid-sentence when a boundary exists)."""
+    t = norm(text)
+    if len(t) <= n:
+        return t
+    parts = [norm(x) for x in SENT_RE.split(text or '') if norm(x)]
+    ev = norm(re.sub(r'^["\'\u201c\u300c]+|["\'\u201d\u300d]+$', '', evidence or ''))
+    if ev:
+        hit = next((x for x in parts if ev in x), None)
+        if hit: return hit if len(hit) <= n * 2 else hit[:n]
+    out = ''
+    for x in parts:
+        if len(out) + len(x) + 1 > n: break
+        out = (out + ' ' + x).strip()
+    return out or t[:n]
+
 def skeleton(a):
     diag = load_json(os.path.join(a.work, 'diag.json')); jin = {x['key']: x for x in load_json(os.path.join(a.work, 'judge_inputs.json'), [])}
     tls = {os.path.basename(p)[:-5]: load_json(p) for p in glob.glob(os.path.join(a.work, 'timelines', '*.json'))}
@@ -73,20 +96,21 @@ def skeleton(a):
             if not g['repeated']:
                 continue
             title, fix = TOPIC.get(topic, TOPIC['other'])
-            ev = [dict(date=jin[k]['ts'][5:10].replace('-', '/') if jin.get(k, {}).get('ts') else '', quote={'orig': norm(txt(k))[:200]})
+            labels = load_json(os.path.join(a.work, 'labels.json'), {})
+            ev = [dict(date=md(jin.get(k, {}).get('ts')), quote={'orig': pick_quote(txt(k), labels.get(k, {}).get('evidence', ''))})
                   for k in g['keys'][:4]]
             conf = 'high' if g['confidences'].count('high') >= max(1, len(g['confidences']) // 2) else 'medium'
             item = dict(title=title, now=ev, fix=fix, copy=None, copy_kind='memory', needs_review=True, topic=topic,
                         score=dict(impact=impact_from(g['incidents']), confidence=conf, effort=1, reversibility=1.0,
-                                   basis=f"{g['incidents']} incidents on {len(g['days'])} days"))
-            if g.get('fix_candidates_between') or g.get('fix_candidates_after_last'):
+                                   basis=f"{g['incidents']} incidents on {g['sessions']} separate occasions"))
+            if g.get('fix_candidates'):
                 # unverified: the host bot decides whether any of these is about this problem (references/writing.md)
-                item['fix_check'] = dict(between=g.get('fix_candidates_between', []), after_last=g.get('fix_candidates_after_last', []))
+                item['fix_check'] = g['fix_candidates']
             findings.append(item)
         for r in b['repeated_requests'][:1]:
             if len(r['days']) >= 3:
                 findings.append(dict(title='You ask for the same thing by hand on many days',
-                                     now=[dict(date=f"{r['days'][0][5:]}~{r['days'][-1][5:]}".replace('-', '/'), quote={'orig': t}) for t in r['examples'][:3]],
+                                     now=[dict(date=f"{md(r['days'][0])}~{md(r['days'][-1])}", quote={'orig': pick_quote(t)}) for t in r['examples'][:3]],
                                      fix='A routine could do this on a schedule. Check the routines page in the app first.',
                                      copy=None, copy_kind='routine', needs_review=True,
                                      score=dict(impact=impact_from(0, days=len(r['days'])), confidence='medium', effort=2, reversibility=1.0,
@@ -100,13 +124,13 @@ def skeleton(a):
                          else 'Some requests went unanswered.',
                'green': 'No repeated problem.'}[b['status_suggested']]
         if b['status_suggested'] == 'red':
-            findings = [dict(title='Barely used', now=[dict(date='', text=f"Last request {(b['last_request'] or '')[5:10]}")],
+            findings = [dict(title='Barely used', now=[dict(date='', text=f"Last request {md(b['last_request'])}")],
                              fix='Consider cleaning it up, or moving its job to a bot you use. How: see the keep / clean-up item.',
                              needs_review=True, score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='idle; small share'))] + findings
         own = [w for w in b['waits'] if not w['fleet_outage'] and w['texts']]
         if own:   # unanswered requests: information, not a scored proposal
             findings.append(dict(title='Some requests went unanswered', info=True, needs_review=True,
-                                 now=[dict(date=w['first'][5:10].replace('-', '/'), quote={'orig': w['texts'][0]}) for w in own[:3]],
+                                 now=[dict(date=md(w['first']), quote={'orig': pick_quote(w['texts'][0])}) for w in own[:3]],
                                  fix='It went quiet for hours after these messages. Check whether it was busy or stuck.'))
         bots.append(dict(id=bid, name=b['name'], status=b['status_suggested'], issue='TODO short issue', why=why,
                          improving=improving, findings=findings, needs_review=True))
@@ -119,7 +143,7 @@ def skeleton(a):
                           score=dict(impact=impact_from(0, bots=len(empty)), confidence='medium', effort=1, reversibility=1.0, basis=f'{len(empty)} bots')))
     for o in diag['fleet']['outages']:
         fleet.append(dict(title='Several bots stopped answering at the same time',
-                          now=[dict(date=w['first'][5:10].replace('-', '/'), who=diag['bots'][w['bot']]['name'], quote={'orig': w['texts'][0]})
+                          now=[dict(date=md(w['first']), who=diag['bots'][w['bot']]['name'], quote={'orig': pick_quote(w['texts'][0])})
                                for w in o['waits'][:4] if w['texts']],
                           fix='It happened once, so nothing to change. The next audit will flag it if it happens again.',
                           info=True))
@@ -141,9 +165,30 @@ def skeleton(a):
     from make_report import UI_DEFAULT
     draft = dict(schema=3, lang=lang, title='Bot audit report', date=diag['now'][:10], date_label='TODO ' + diag['now'][:10],
                  ui=dict(UI_DEFAULT), bots=bots, fleet=fleet, leads=leads)
+    draft['_skeleton'] = dict(lang='en', texts=sorted(set(placeholder_texts(draft))))
     dump_json(draft, os.path.join(a.work, 'findings_draft.json'))
     n = sum(len(b['findings']) for b in bots)
     print(f'draft: {len(bots)} bots, {n} bot findings, {len(fleet)} fleet items -> {os.path.join(a.work, "findings_draft.json")}')
+
+VISIBLE = ('title', 'fix', 'short', 'issue', 'why', 'text', 'after', 'gloss')
+
+def visible_strings(d):
+    """(where, text) for every user-visible string the host bot writes (not quotes, names or ui labels)."""
+    yield 'title', d.get('title', '')
+    for b in d.get('bots', []):
+        for k in ('issue', 'why', 'gloss'): yield f"{b.get('name')} / {k}", b.get(k) or ''
+        for x in b.get('improving', []): yield f"{b.get('name')} / improving", x
+    for b, f in iter_findings(d):
+        w = (b['name'] if b else 'fleet') + ' / '
+        for k in ('title', 'fix', 'short'): yield w + k, f.get(k) or ''
+        for e in f.get('now', []):
+            for k in ('text', 'after', 'who'):
+                if isinstance(e.get(k), str) and k != 'who': yield w + 'evidence ' + k, e[k]
+        for c in ([f['copy']] if isinstance(f.get('copy'), str) else [x.get('text', '') for x in f.get('copy') or [] if isinstance(x, dict)]):
+            yield w + 'copy', c
+
+def placeholder_texts(d):
+    return [t for _, t in visible_strings(d) if isinstance(t, str) and len(t) > 3 and not t.startswith('TODO')]
 
 def iter_findings(d):
     for b in d['bots']:
@@ -158,6 +203,15 @@ def finalize(a):
     text = corpus(a.work, diag)
     errors, warns = [], []
     if 'TODO' in str(draft.get('date_label', '')): warns.append('date_label still has TODO (write the date as the reader writes it)')
+    sk = draft.get('_skeleton') or {}
+    if sk and str(draft.get('lang', 'en')).split('-')[0] != sk.get('lang', 'en'):
+        left = set(sk.get('texts', []))
+        for where, t in visible_strings(draft):
+            if isinstance(t, str) and t in left:
+                warns.append(f'{where}: still the skeleton\'s placeholder text ("{t[:50]}"); write it in the report language')
+        from make_report import UI_DEFAULT
+        same = [k for k, v in (draft.get('ui') or {}).items() if isinstance(v, str) and len(v) > 3 and v == UI_DEFAULT.get(k)]
+        if same: warns.append('ui labels still in the fallback language: ' + ', '.join(same[:12]))
     for b in draft['bots']:
         if b.get('status') not in ('green', 'yellow', 'red'):
             errors.append(f"{b.get('name')}: status must be green|yellow|red")
@@ -177,6 +231,8 @@ def finalize(a):
         if any('TODO' in t for t in copy_texts(f)): warns.append(where + ': copy still has TODO')
         for e in f.get('now', []):
             q = e.get('quote')
+            if q and e.get('text'):
+                errors.append(where + ': an evidence line has both "quote" and "text"; use two lines'); continue
             if not q: continue
             orig = q.get('orig') if isinstance(q, dict) else q
             if not orig:
@@ -211,7 +267,7 @@ def finalize(a):
     cands.sort(key=lambda x: (-x[0], -x[1]))
     if not draft.get('top3_locked'):
         draft['top3'] = [dict(text=f.get('short') or f['title'], ref=r) for _, _, r, f in cands[:3]]
-    draft.pop('leads', None)
+    draft.pop('leads', None); draft.pop('_skeleton', None)
     with open(os.path.join(a.work, 'scores.md'), 'w', encoding='utf-8') as fh:
         fh.write('| rank | ref | title | score | impact | confidence | effort | reversibility | basis |\n|---|---|---|---|---|---|---|---|---|\n')
         for k, (v, _, r, f) in enumerate(cands, 1):

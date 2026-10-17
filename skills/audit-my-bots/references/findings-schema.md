@@ -57,9 +57,16 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   "see": "fleet-1",          // optional: this bot's evidence for a shared fleet item (no Apply box, no score)
   "info": true,              // optional: information only (no Apply box, no score)
   "needs_review": true,      // set by skeleton; remove after you rewrite the text
-  "fix_check": {"between": [], "after_last": []}   // set by skeleton: unverified fix candidates; resolve, then delete
+  "fix_check": [{"ts": "…", "kind": "memory_write|bot_said|bot_promised", "text": "…", "incidents_after": 1,
+                 "active_days_after": 3}]   // set by skeleton: unverified fix candidates; resolve, then delete
 }
 ```
+
+## Evidence lines
+- One line holds either `quote` (words from a source) or `text` (a plain fact), never both.
+- `who` (optional) is the speaker shown before the quote, when it isn't the user in this bot's own chat: "Bot", or
+  another bot's name in a fleet item.
+- `date` is `MM/DD` from the skeleton; you may localise it, with one format throughout.
 
 ## Quotes
 - `orig` is the exact original words, in whatever language the chat was in. Never translate inside `orig`.
@@ -85,7 +92,10 @@ table headers (`th`, a list of 4), status names (`st`), copy-box labels (`kind`)
 - Every `quote.orig` must appear word for word (whitespace aside) in its `source`: the saved chats, the memory, or a bot's
   name or description. No file paths or app notices.
 - `copy` is a string or a list of `{"bot", "text"}`.
-- With `--strict`: no `fix_check` left, and `date_label` has no `TODO`.
+- An evidence line with both `quote` and `text` is an error.
+- With `--strict`: no `fix_check` left, and `date_label` has no `TODO`. When `lang` is not English, any visible text
+  still equal to the skeleton's English placeholder (recorded in `_skeleton`), and any `ui` label equal to its English
+  default, is a warning. finalize removes `_skeleton`.
 - `leads` may stay in the draft; finalize removes it from `findings.json`.
   Use "…" to skip words inside a quote; each piece is checked on its own.
 - With `--strict`, no `needs_review` flags or `TODO` text may remain.

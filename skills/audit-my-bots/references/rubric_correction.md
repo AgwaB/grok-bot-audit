@@ -21,11 +21,28 @@ next_bot: the bot's reply after it (may be empty if it never answered)
  "evidence": "\"too long again\""}
 ```
 - `label` is true **only** when `type` is `correction`.
-- `topic` is null when `label` is false.
+- `topic` is set for corrections and preferences, null otherwise.
 - `evidence` quotes the few words (from `user` or `next_bot`) that decided it. Never copy secrets (codes, keys,
   passwords) into it.
-- Record verdicts as TSV lines `n<TAB>type<TAB>topic<TAB>confidence<TAB>evidence` and run `judge_inputs.py --label`
-  (SKILL.md step 4).
+- `fix_promised` (optional) is true when `next_bot` promises a lasting change ("from now on I'll…", in any language).
+
+## Recording verdicts (labels.tsv)
+One line per **correction or preference**; every other item needs no line and is recorded as type `none`. Seven
+tab-separated columns, `\N` or `-` for an empty cell:
+
+| column | value |
+|---|---|
+| n | the item number from `--list` |
+| type | `correction` or `preference` (any type from the table below is accepted) |
+| topic | one of the fixed topics below |
+| confidence | `high`, `medium` or `low` |
+| evidence | a few words copied from `user` (or `next_bot`), no quote marks needed, never a secret |
+| promised | `yes` if `next_bot` promises a lasting change, else empty |
+| user_start | the first 5–10 characters of `user`, copied; `--label` refuses the line if they don't match the item |
+
+Example: `17<TAB>correction<TAB>format_length<TAB>high<TAB>too long again<TAB>yes<TAB>Too long`
+For 300–400 items, read about 50 at a time with `--list`, write that batch's lines, run `--label` to check the echo, and
+go on. Each run rewrites `labels.json` from the whole file.
 
 ## Types
 | type | meaning | label |
@@ -46,6 +63,11 @@ next_bot: the bot's reply after it (may be empty if it never answered)
 5. Does the user ask to change the last output (shorter, simpler, another style) without criticism? → `new_request`.
 6. Is it a lasting wish ("from now on", "by default") with no objection to the last output? → `preference`. With an objection, go back to step 2.
 7. Otherwise → the non-correction type that fits best.
+
+More rules:
+- Asking before an irreversible step is not a correction of the bot, and the bot asking first is not a problem.
+- A complaint typed while answering a question card counts as a correction if it criticises earlier output.
+- The bot admitting a mistake on its own, with no objection from the user, is not a correction (no user message to label).
 
 A long pasted draft or brief (over ~300 characters, or a numbered outline) is a `new_request` unless the message, anywhere
 in it (often after the pasted part), criticises the bot's previous output; then judge it from step 2.
@@ -92,4 +114,5 @@ Not corrections (label false):
 
 ## After judging (done by diagnostics.py, not by you)
 - Corrections on the same topic in the same bot within 60 minutes are one **incident** (one exchange).
-- A **repeated correction** is the same bot and topic in 2 or more incidents on 2 or more days, or 3 or more incidents. Only repeated corrections can become proposals; one-off mistakes never become rules.
+- A **repeated correction** is the same bot and topic in 2 or more incidents on 2 or more separate occasions (more than 6
+  hours apart). Only repeated corrections can become proposals; one-off mistakes never become rules.

@@ -34,7 +34,7 @@ the proposals they pick. Nothing changes without their pick.
   (subagent, executor, tool, transcript, model, JSON).
 - You can't delete or merge bots, and there's no tool for it. Only the user can delete a bot (right-click it in the sidebar,
   then Delete). Before they do, they should check that bot's routines in the app.
-- No rules from one-off mistakes. If nothing qualifies, say "Nothing major to fix."
+- No rules from one-off mistakes. If nothing qualifies, say so plainly in the user's language ("Nothing major to fix.").
 
 ## 0. Set up
 `$SKILL` is the folder that holds this `SKILL.md`. If you were given `SKILL` or `W`, keep them. Shell variables don't
@@ -45,7 +45,8 @@ SKILL="${SKILL:-<folder that holds this SKILL.md>}"
 [ -f "$SKILL/scripts/sessions.py" ] || SKILL="$(dirname "$(dirname "$(find /home/box/agent-data/plugins ~/.cursor/plugins \
   -path '*/audit-my-bots/scripts/sessions.py' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)")")"
 W="${W:-/workspace/bot-audit-run/$(date +%F)}"; mkdir -p "$W"
-printf 'SKILL=%q\nW=%q\nAUDIT_REPLAY_DIR=%q\n' "$SKILL" "$W" "${AUDIT_REPLAY_DIR:-}" > "$W/env.sh"; echo "$W/env.sh"
+mkdir -p "$W/tmp"   # your own scratch files go here, not in $W
+printf 'export SKILL=%q W=%q AUDIT_REPLAY_DIR=%q\n' "$SKILL" "$W" "${AUDIT_REPLAY_DIR:-}" > "$W/env.sh"; echo "$W/env.sh"
 ```
 Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts; nothing else to install.
 
@@ -53,12 +54,12 @@ Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts;
 ```bash
 python3 "$SKILL/scripts/sessions.py" list-bots --work "$W" --self "<your own agent id>"
 ```
-Your own id is the folder name of your agent directory (`/home/box/agent-data/agents/<your id>`). If you have none (for
-example, you run as a helper or a test), leave out `--self` and remove your own entry from `$W/bots.json` by name if it's there.
+Your own id is the folder name of your agent directory (`/home/box/agent-data/agents/<your id>`). One rule: skip only
+the id given by `--self` (or by the replay); without one, audit every listed bot. Never guess yourself by name.
 
 **Testing only:** if `$AUDIT_REPLAY_DIR` is set, don't list or fetch. Run
-`python3 "$SKILL/scripts/sessions.py" replay --work "$W"` (it copies saved pages; every listed bot is audited) and go
-straight to `parse` at the end of step 2.
+`python3 "$SKILL/scripts/sessions.py" replay --work "$W"` (no `--self`: the replay records it if any) and go straight
+to `parse` at the end of step 2.
 
 ## 2. Fetch each bot's history yourself
 For every bot in `bots.json`, call **ReadTranscript** with `agent_id=<id>`, `limit=200` and `write_to_file=true`
@@ -77,22 +78,21 @@ If it warns that pages don't reach the start or the end, fetch the missing pages
 messages are now in `$W/timelines/<id>.json` (`events`: role, ts, text), if you need more context later.
 
 ## 3. Find correction candidates
-Pick the mode by the language of each bot's chats (not the user's): the built-in cue phrases are a small English list.
 ```bash
-python3 "$SKILL/scripts/judge_inputs.py" --work "$W" --all                     # every bot's chats mostly non-English
-python3 "$SKILL/scripts/judge_inputs.py" --work "$W" --all-for "<bot>" ...     # a mix: --all only for these bots
-python3 "$SKILL/scripts/judge_inputs.py" --work "$W"                           # every bot's chats mostly English
+python3 "$SKILL/scripts/judge_inputs.py" --work "$W" --auto
 ```
-"Mostly English" means at least 8 in 10 of that bot's user messages. A bot whose replies match no cue gets all its
-replies exported anyway. If the total is over 400 items, you may instead write `$W/cues.json`
+`--auto` picks per bot: the built-in cue phrases are a small English list, so a bot gets every reply exported unless
+8 in 10 of its user messages are mostly in Latin letters. Each bot's line prints that share and the mode used. If the
+total is over 400 items, you may instead write `$W/cues.json` for the user's language and rerun without `--auto`
 (`$SKILL/references/cues.md`). Attachment notices and file paths are already stripped.
 
 ## 4. Judge every candidate
-Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. Read in batches with
-`judge_inputs.py --work "$W" --list --from 1 --to 50`; print the full messages of an item with `--show <n>`.
-Write your verdicts as tab-separated lines `n, type, topic, confidence, evidence` in `$W/labels.tsv` (list every
-correction and preference; items you leave out count as not a correction), then
-`judge_inputs.py --work "$W" --label "$W/labels.tsv"` writes `labels.json`. No candidates: `labels.json` is `{}`.
+Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. Read in batches of about 50 with
+`judge_inputs.py --work "$W" --list --from 1 --to 50`, write that batch's lines, then the next batch;
+`--show <n>` prints an item's full messages. In `$W/labels.tsv` write one line per **correction or preference only**,
+7 tab-separated columns: `n type topic confidence evidence promised user_start` (the format is in the rubric).
+`judge_inputs.py --work "$W" --label "$W/labels.tsv"` echoes each line with the item's user text and writes
+`labels.json`. Check the echo; a `user_start` mismatch is an error (off by one). No candidates: `labels.json` is `{}`.
 
 ## 5. Run the checks
 ```bash
@@ -102,15 +102,14 @@ python3 "$SKILL/scripts/build_findings.py" skeleton --work "$W" --lang "<BCP 47 
 
 ## 6. Write the findings
 Read `$SKILL/references/criteria.md`, `findings-schema.md` and `writing.md`, then edit `$W/findings_draft.json`:
-- **Groups:** for each repeated-correction group, read the actual messages. Keep it only if one rule would have prevented
-  every incident. Resolve each `fix_check` (memory saves after the group started; most are unrelated) as `writing.md` says.
-- **Status:** the suggested status is a starting point. Change it when your reading says otherwise, and say why in `why`.
-  Set `issue` and `why` for every bot.
+- **Groups and status:** follow the decision procedure in `criteria.md` step by step (shared cause, merging, normal
+  iteration, overriding the suggested status). Resolve each `fix_check` as `writing.md` says. Set `issue` and `why`
+  for every bot.
 - **Words:** replace every placeholder and `TODO` (titles, fixes, `copy`, `issue`, `why`, `ui` labels, `date_label`) with
   plain wording in the user's language. `copy` goes into that bot, so write it in the language the user uses with that bot.
 - **Quotes:** word for word in `quote.orig`; add `translation` when the chat's language differs from the report's.
-- **Leads:** check `leads` (stale memory, promises, skipped questions, the same request in several bots, other bots' jobs).
-  Add a finding only for what you confirm by reading.
+- **Leads:** check `leads` (stale memory, promises, skipped questions, the same request in several bots, other bots' jobs)
+  and any safety event you saw in the chats. Add an item only for what you confirm by reading (`writing.md`).
 - **Shared causes:** one fleet item per cross-bot cause; each bot points to it with `"see": "fleet-N"`.
 - **Review flags:** remove `needs_review`. Then:
 ```bash
@@ -123,24 +122,25 @@ Fix every ERROR and WARN it reports and run it again.
 python3 "$SKILL/scripts/make_report.py" "$W/findings.json" --outdir "$W/report"
 pdftoppm -png -r 80 -f 1 -l 1 -singlefile "$W"/report/fleet_report_*.pdf "$W/report/page1"
 ```
-Look at `$W/report/page1.png` with your image reader to check that it looks right.
+Look at `$W/report/page1.png` with your image reader and check: (1) every heading, label and sentence is in the
+user's language; (2) no placeholder or `TODO` text is left; (3) no empty section or box; (4) quotes read as real
+messages, not cut mid-word. Fix `findings.json` (or the draft and finalize again) and rebuild if any fails.
 
 ## 8. Tell the user
-Send one short message:
-- Start with the report's opening sentence (the `ui.lede_*` text you wrote, word for word).
-- Add the status table with 3 columns (bot, status, current issue); proposal counts stay in the report.
-- Then the top 3. If the user asked something specific (for example, which bots they don't need), answer it in one
-  sentence.
+Send one message:
+- First sentence: the report's opening sentence, word for word (the `ui.lede_*` variant the report shows: `lede_red`,
+  `lede_yellow` or `lede_green`).
+- The status table: 3 columns with the first three `ui.th` headers (bot, status, current issue), in report order.
+- With proposals: the top 3, one line each. With none: one line saying nothing needs doing.
+- If the user asked something specific (for example, which bots they don't need), answer it in one sentence.
 - Attach the PDF and the HTML. Details stay in the files.
 
-If nothing needs doing, say so in one line instead of the top 3.
-
 ## 9. Offer to apply
-If there are proposals, ask one multi-select question:
-- One option per proposal, labelled with its short report line (`short` or title), plus "None for now". `see` pointers
-  and info items aren't options.
-- Never label an option "Remove X", "Delete X" or "Merge X": you can't do those. For a clean-up candidate, use an option
-  like "Show me how to clean up X".
+Skip to the weekly offer if there are no proposals. Otherwise ask one multi-select question, in the user's language:
+- Options: the top 3 first, then the other proposals; one option per finding, labelled with its `short` line or title
+  (a fleet item with text for several bots is one option). Each clean-up bot gets "Show me how to clean up X". Last:
+  "None for now". `see` pointers and info items aren't options.
+- Never label an option "Remove X", "Delete X" or "Merge X": you can't do those.
 
 Apply **only** what the user picks:
 - **Memory or description text for another bot:** give the exact text and say where it goes (that bot's settings, or a message to that bot). Use a tool that changes another bot only if you have one and the user picked that item.
@@ -151,5 +151,5 @@ Apply **only** what the user picks:
   (deleting removes its profile, chat and routines; Hide from sidebar keeps them). To merge, give the text to paste into the
   bot that takes over X's job, then delete X the same way. You never delete or merge anything yourself.
 
-Then, or straight away if there were no proposals, offer once to re-run this audit as a weekly routine (for example,
-Monday at 9:00 in the user's time zone; say the day and time). Create it only if the user says yes.
+After the picks are handled (or straight away with no proposals), offer once to re-run this audit every week, suggesting
+Monday 9:00 in the user's own time zone (say the day, time and zone). Create the routine only if the user says yes.

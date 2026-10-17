@@ -71,6 +71,11 @@ def main():
     if not html_f: missing.append('report/*.html')
     if not pdf_f or open(pdf_f[-1], 'rb').read(5) != b'%PDF-': missing.append('report/*.pdf')
     check('every step produced its files', not missing, 'missing: ' + ', '.join(missing) if missing else 'all present')
+    KNOWN = {'bots.json', 'env.sh', 'replay.json', 'judge_inputs.json', 'labels.json', 'labels.tsv', 'cues.json', 'diag.json',
+             'findings_draft.json', 'findings.json', 'timelines', 'transcripts', 'report', 'tmp',
+             'chat.md', 'commands.log', 'scores.md', 'grading.json'}   # the last four are written by the eval harness
+    extra = sorted(n for n in os.listdir(W) if n not in KNOWN and not n.startswith('.')) if os.path.isdir(W) else []
+    check('scratch files are in $W/tmp, not the work folder', not extra, extra[:8] or 'clean')
     nob = [b['name'] for b in bots if b['id'] not in tls]
     check('every bot has a timeline', bots and not nob, nob or f'{len(tls)} timelines')
     inc = [tl['name'] for tl in tls.values() if not (tl.get('coverage') or {}).get('complete')]

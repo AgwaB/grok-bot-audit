@@ -9,8 +9,8 @@ this skill.
    `evals.json`): a Korean user, an English user, a Japanese user with a synthetic fleet, and a tiny fleet with nothing
    to fix. Few and real beats many and synthetic; add a scenario whenever a real run finds a new failure.
 2. **Replay, so runs repeat.** Real chats change and fetching needs ReadTranscript, so evals run on frozen inputs: a
-   replay folder holds `bots.json`, `transcripts/<id>/page_*.txt` and `replay.json` (`{"now": ...}` so idle days don't
-   drift). With `AUDIT_REPLAY_DIR` set, `SKILL.md` tells the agent to run `sessions.py replay` instead of steps 1-2.
+   replay folder holds `bots.json`, `transcripts/<id>/page_*.txt` and `replay.json` (`{"now": ..., "self": <id, optional>}` so idle days
+   don't drift; `self` is the auditing bot to skip, if it is in the fleet). With `AUDIT_REPLAY_DIR` set, `SKILL.md` tells the agent to run `sessions.py replay` instead of steps 1-2.
    Everything after that is the normal path.
 3. **Fresh agent per run, with and without the change.** Each run is a new agent that has only the prompt below. Run the
    current skill (`with_skill`) and a baseline (`old_skill`: a snapshot of the last release, for example
@@ -37,6 +37,8 @@ this skill.
 ```
 Make a real-run replay folder from a finished work folder:
 `mkdir -p R && cp -r W/transcripts W/bots.json R/ && echo '{"now": "<diag.json now>"}' > R/replay.json`.
+**Consistency:** run one scenario twice with fresh agents (e.g. `ko-user` and `ko-user-b`) and compare per-bot status and
+top 3; a difference is traced to the judgment or rule that caused it (see `iteration-2/summary.md` outside the repo).
 
 ## Prompt for a fresh agent
 Fill in the four values (see `eval_prompts.md` for each scenario) and paste:
@@ -68,6 +70,7 @@ steps 1-2, run `mkdir -p $W && cp -r <replay folder>/transcripts <replay folder>
 ```bash
 python3 tests/test_pipeline.py      # end to end on the synthetic fleet, English and Japanese rendering
 python3 tests/test_regressions.py   # issues found in real runs (fetch batching, --all, excerpts, notices, copy lists...)
+python3 tests/test_iteration2.py    # consistency fixes: occasions, fix facts, safer labels, placeholders, quotes
 python3 tests/test_grade.py         # grade.py itself: a clean run scores 1.0, known-bad outputs fail
 ```
 
