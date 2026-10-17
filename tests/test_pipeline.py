@@ -3,7 +3,7 @@
 diagnostics -> findings -> HTML + PDF (en and ko). Run: python3 tests/test_pipeline.py [--keep]"""
 import glob, json, os, re, shutil, subprocess, sys, tempfile
 
-HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE); S = os.path.join(ROOT, 'scripts')
+HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE); S = os.path.join(ROOT, 'skills', 'audit-my-bots', 'scripts')
 FX = os.path.join(HERE, 'fixtures'); SELF = 'aaaaaaaa-0000-4000-8000-0000000000ff'
 RECIPE, TRIP, OLD, MEMO = (f'aaaaaaaa-0000-4000-8000-00000000000{i}' for i in (1, 2, 3, 4))
 failures = []

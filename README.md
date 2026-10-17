@@ -29,11 +29,13 @@ and the memory the app shows it. No external APIs and no logins.
 | Right bot for the job | the same job split across bots, requests that belong to another bot, empty or outdated descriptions |
 | Merge / remove | idle bots with a very small share of use |
 
-Rules and thresholds are in `references/criteria.md`; the correction rubric is in `references/rubric_correction.md`.
+Rules and thresholds are in `skills/audit-my-bots/references/criteria.md`; the correction rubric is in `skills/audit-my-bots/references/rubric_correction.md`.
 
 ## Install
-- **Local:** copy or clone this folder to `~/.cursor/plugins/local/bot-audit/`, then reload. Grok Bot discovers `skills/` through `.cursor-plugin/plugin.json`.
-- **Marketplace:** publish this folder as a Git repository and submit it to a plugin marketplace (for example, add an entry with `name` and `source` to the marketplace's `.cursor-plugin/marketplace.json`).
+- **Local:** copy or clone this repository to `~/.cursor/plugins/local/bot-audit/`, then reload. The skill is found through `.cursor-plugin/plugin.json`.
+- **From this repository:** the repo root has a one-plugin `.cursor-plugin/marketplace.json`, so it can be imported as a team marketplace
+  ("Import from Repo") or from Customize → From GitHub Repository in Cursor.
+- **Public marketplace:** not listed yet. Listing goes through review (see Cursor's plugin docs).
 
 Then ask your bot something like "audit my bots" or "which of my bots do I actually need?".
 
@@ -46,15 +48,16 @@ Requirements on the machine running the bot:
 | path | what |
 |---|---|
 | `skills/audit-my-bots/SKILL.md` | the end-to-end procedure the bot follows, including the safety rules |
-| `scripts/sessions.py` | list bots (name and description only), save transcript pages, build per-bot timelines |
-| `scripts/judge_inputs.py` | wide filter for messages that might be corrections; exports items for the rubric |
-| `scripts/diagnostics.py` | usage, correction groups, suggested status, outages, memory, repeated requests, overlap leads |
-| `scripts/build_findings.py` | `skeleton`: a draft findings file with verbatim evidence; `finalize`: checks quotes word for word, scores, caps 3 per bot, picks the top 3 |
-| `scripts/make_report.py` | renders the HTML and PDF (headless Chrome, temporary profile) |
-| `references/` | correction rubric, criteria, findings schema, design notes |
-| `assets/` | logo; OFL fonts (subset and renamed) with their licenses |
+| `skills/audit-my-bots/scripts/sessions.py` | list bots (name and description only), save transcript pages, build per-bot timelines |
+| `skills/audit-my-bots/scripts/judge_inputs.py` | wide filter for messages that might be corrections; exports items for the rubric |
+| `skills/audit-my-bots/scripts/diagnostics.py` | usage, correction groups, suggested status, outages, memory, repeated requests, overlap leads |
+| `skills/audit-my-bots/scripts/build_findings.py` | `skeleton`: a draft findings file with verbatim evidence; `finalize`: checks quotes word for word, scores, caps 3 per bot, picks the top 3 |
+| `skills/audit-my-bots/scripts/make_report.py` | renders the HTML and PDF (headless Chrome, temporary profile) |
+| `skills/audit-my-bots/references/` | correction rubric, criteria, findings schema, design notes |
+| `skills/audit-my-bots/assets/fonts/` | OFL fonts (subset and renamed) with their licenses |
+| `assets/` | plugin logo |
 | `tests/` | synthetic fixture (fake bots, fake chats) and an offline end-to-end test |
-| `tools/presubset_fonts.py` | maintainer script that produced `assets/fonts` |
+| `tools/presubset_fonts.py` | maintainer script that produced the bundled fonts |
 
 ## Privacy and safety
 - Read-only on bot data. Only `profile.json` (name and description) and the history the bot fetches are read.
@@ -71,4 +74,4 @@ languages' HTML and PDF are produced. It also checks statuses, the outage, the r
 invented quote is rejected.
 
 ## License
-MIT for the code (see `LICENSE`). Fonts: SIL Open Font License 1.1 (see `assets/fonts/`).
+MIT for the code (see `LICENSE`). Fonts: SIL Open Font License 1.1 (see `skills/audit-my-bots/assets/fonts/`).

@@ -3,9 +3,9 @@ import sys, os
 from fontTools import subset
 from fontTools.ttLib import TTFont
 import argparse
-ap = argparse.ArgumentParser(description='Subset + rename the original OFL fonts into assets/fonts (maintainers only).')
+ap = argparse.ArgumentParser(description='Subset + rename the original OFL fonts into skills/audit-my-bots/assets/fonts (maintainers only).')
 ap.add_argument('src', help='folder with the original TTFs'); a = ap.parse_args()
-SRC = a.src; DST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'assets', 'fonts')
+SRC = a.src; DST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'skills', 'audit-my-bots', 'assets', 'fonts')
 latin = ''.join(map(chr, range(0x20, 0x7f))) + ''.join(map(chr, range(0xa0, 0x180))) + '“”‘’…·→←–—■□✓•€₩'
 hangul = ''.join(c for c in map(chr, range(0xac00, 0xd7a4)) if len(c.encode('euc-kr', 'ignore')) == 2)
 jamo = ''.join(map(chr, range(0x3131, 0x318f)))
