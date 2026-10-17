@@ -27,14 +27,16 @@ the proposals they pick. Nothing changes without their pick.
   with ReadTranscript. Files in the work folder `$W` (pages, timelines, `diag.json`…) are yours to read.
 - Never open, print or copy: kv metadata, `blobEncryptionKey`, `box-secrets.json`, `host-secrets.json`, `chrome-cookie-seed.json`,
   `gateway.json`, `store.db`, `search-index.db` or other app databases, `settings.json`, browser profiles, or login form values.
-- Never quote secrets (passwords, codes, keys, tokens) anywhere: not in the report, the chat, or `labels.json` evidence.
+- Never quote secrets (passwords, codes, keys, tokens) anywhere: not in the report, the chat, or `labels.json` evidence,
+  also when the user typed them. How to report secrets and safety events: `criteria.md` §4.
 - Never invent quotes or numbers. Quotes are copied word for word; `build_findings.py finalize` rejects quotes it can't find.
 - Skip yourself (the auditing bot).
 - In anything the user sees, use plain words. No token or cost estimates, no tool counts, no precision numbers, no internal terms
   (subagent, executor, tool, transcript, model, JSON).
 - You can't delete or merge bots, and there's no tool for it. Only the user can delete a bot (right-click it in the sidebar,
   then Delete). Before they do, they should check that bot's routines in the app.
-- No rules from one-off mistakes. If nothing qualifies, say so plainly in the user's language ("Nothing major to fix.").
+- No rules from one-off mistakes; a standing wish the user stated (a preference) may still become a memory proposal
+  (`criteria.md` §2). If nothing qualifies, say so plainly in the user's language.
 
 ## 0. Set up
 `$SKILL` is the folder that holds this `SKILL.md`. If you were given `SKILL` or `W`, keep them. Shell variables don't
@@ -59,8 +61,9 @@ the id given by `--self` (or recorded by the replay); with no recorded self, aud
 your name is not you unless the id matches. Only bots in `bots.json` are rows in the report.
 
 **Testing only:** if `$AUDIT_REPLAY_DIR` is set, don't list or fetch. Run
-`python3 "$SKILL/scripts/sessions.py" replay --work "$W"` (no `--self`: the replay records it if any) and go straight
-to `parse` at the end of step 2.
+`python3 "$SKILL/scripts/sessions.py" replay --work "$W"` (no `--self`: the replay's `replay.json` records it if any,
+and the command prints what it skipped) and go straight to `parse` at the end of step 2. Every bot it lists is audited,
+also one with your own name: it is the recorded fleet's bot, not you.
 
 ## 2. Fetch each bot's history yourself
 For every bot in `bots.json`, call **ReadTranscript** with `agent_id=<id>`, `limit=200` and `write_to_file=true`
@@ -89,8 +92,8 @@ total is over 400 items, you may instead write `$W/cues.json` for the user's lan
 
 ## 4. Judge every candidate
 Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. Work in batches:
-1. `judge_inputs.py --work "$W" --list --short --from 1 --to 50` (its last line says how many items fit in about 10 KB;
-   use smaller batches if output gets cut); `--show <n>` prints an item's full messages.
+1. `judge_inputs.py --work "$W" --list --short --from 1` prints one batch of about 10 KB (how many items depends on the
+   chats) and its last line gives the `--from` of the next batch; `--show <n>` prints an item's full messages.
 2. Append that batch's lines to `$W/labels.tsv`: one line per **correction or preference only**, 7 tab-separated
    columns `n type topic confidence evidence promised user_start` (format in the rubric).
 3. `judge_inputs.py --work "$W" --label "$W/labels.tsv"`: it echoes each line with the item's user text. A refused line
@@ -145,10 +148,11 @@ Send one message:
 
 ## 9. Offer to apply
 Skip to the weekly offer if there are no proposals. Otherwise ask one multi-select question, in the user's language:
-- Options: the top 3 first, then the other proposals; one option per finding, labelled with its `short` line or title
-  (a fleet item with text for several bots is one option). A clean-up bot gets exactly one option, "Show me how to
-  clean up X": its findings fold into it (also when it is in the top 3). Last: "None for now". `see` pointers and info
-  items aren't options.
+- Options: the top 3 first, then the other proposals in report order (bot sections, then the fleet); one option per
+  finding, labelled with its `short` line or title (a fleet item with text for several bots is one option). A clean-up
+  bot gets exactly one option, "Show me how to clean up X", at its top-3 place or else at its place in report order;
+  its findings fold into it. Last: "None for now". `see` pointers and info items aren't options. Every option, these
+  fixed ones too, is written in the user's language (`writing.md`, "Chat message").
 - Never label an option "Remove X", "Delete X" or "Merge X": you can't do those.
 
 Apply **only** what the user picks:

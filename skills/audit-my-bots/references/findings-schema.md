@@ -43,7 +43,7 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   "now": [                                   // evidence, oldest first
     {"date": "03/01", "quote": {"orig": "Too long. Just give me the steps, no history"}},
     {"date": "03/02", "quote": {"orig": "Demasiado largo, solo los pasos", "translation": "Too long, just the steps", "lang": "es"}},
-    {"date": "03/03", "who": "Bot", "quote": {"orig": "From now on I will keep recipes short."}},
+    {"date": "03/03", "who": "bot", "quote": {"orig": "From now on I will keep recipes short."}},
     {"date": "02/20", "source": "memory", "quote": {"orig": "The user currently cooks for two people."}},
     {"date": "", "text": "Last request 03/08"}   // plain fact, not a quote
   ],
@@ -53,12 +53,15 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   // "copy": [{"bot": "Trip Planner", "text": "Plans trips…"}, {"bot": "Old Notes", "text": "Keeps notes…"}],
   "copy_kind": "memory|description|routine",
   "score": {"impact": 3, "confidence": "high", "effort": 1, "reversibility": 1.0, "basis": "3 incidents on 3 days"},
+             // "basis" is an internal note for scores.md, never shown in the report; any language is fine
   "short": "Recipe Helper: steps only",   // optional short line for the top 3
   "see": "fleet-1",          // optional: this bot's evidence for a shared fleet item (no Apply box, no score)
   "info": true,              // optional: information only (no Apply box, no score)
   "needs_review": true,      // set by skeleton; remove after you rewrite the text
   "fix_check": [{"id": "fx-3", "ts": "…", "incidents_after": 1, "active_days_after": 3}],
              // set by skeleton: unverified fix candidates (texts in the bot's "fix_candidates"); resolve, then delete
+  "fix_check_omitted": {"count": 4, "first": "…", "last": "…"},
+             // set by skeleton when more saves exist than are listed (none had an incident after it); finalize drops it
   "too_early": true,         // optional: a fix was saved too recently to judge; shown with ui.too_early
   "cleanup": true            // set by skeleton on a clean-up bot's finding: its one option is "Show me how to clean up X"
 }
@@ -66,8 +69,10 @@ The scripts fix the structure; every word the reader sees comes from this file, 
 
 ## Evidence lines
 - One line holds either `quote` (words from a source) or `text` (a plain fact), never both.
-- `who` (optional) is the speaker shown before the quote, when it isn't the user in this bot's own chat: "Bot", or
-  another bot's name in a fleet item.
+- `who` (optional) is the speaker shown before the quote, when it isn't the user in this bot's own chat. The value
+  `"bot"` is a keyword, not text: the quote is this bot's own words, and the report shows `ui.who_bot` (default: the
+  bot's name). Any other value is shown as written, so write a bot's name (as in a fleet item) or a word in the report
+  language. A fleet item has no bot of its own: `"bot"` there is an error; name the bot.
 - `chat` (optional) is a bot name: the quote is the user's, from that bot's chat. Shown as `ui.in_chat` ("You (in X)").
 - `date` is `MM/DD` from the skeleton; you may localise it, with one format throughout.
 
@@ -90,9 +95,14 @@ it as a separate small link (`ui.n_see`). Info items are not counted either.
 Keys and English defaults are in `UI_DEFAULT` in `scripts/make_report.py`: section titles (`glance`, `top`, `bybot`, `fleet`),
 table headers (`th`, a list of 4), status names (`st`), copy-box labels (`kind`), buttons and messages, and `footer`.
 Opening sentence: `lede_all` (some need work and some clean-up), `lede_y` (only need work), `lede_r` (only clean-up),
-`lede_none` (nothing to fix); make_report writes the rendered one to `report/lede.txt`. `footer_tr` is appended to
-`footer` only when a translated quote exists; `in_chat` labels a user quote from another bot's chat (`{bot}`);
-`too_early` tags a finding with `"too_early": true`.
+`lede_none` (nothing to fix), picked from the final statuses; make_report writes the rendered one to `report/lede.txt`.
+Write the one that will be used as a whole sentence that fits the real counts (singular or plural as your language
+needs; you may write the numbers in instead of `{n}`, `{y}`, `{r}`). The English fallbacks are count-neutral lists.
+`footer` is the base line (`{date}`); `footer_q` (quotes are word for word) is appended only when the report has a quote,
+and `footer_tr` only when a translated quote exists. `expand` (`{n}` = proposals, as in the table) labels a collapsed
+section; `expand_info` replaces it when the section has no proposals. `in_chat` labels a user quote from another bot's
+chat (`{bot}`); `who_bot` labels a quote with `"who": "bot"` (`{bot}`); `too_early` tags a finding with
+`"too_early": true`.
 
 ## Rules finalize enforces
 - `status` is one of green / yellow / red.

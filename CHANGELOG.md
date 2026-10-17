@@ -43,5 +43,14 @@
   the latest relevant fix decides; make_report writes the opening sentence to `report/lede.txt` and checks the whole
   report (`report/checks.txt`); `chat` evidence ("You (in X)"), a "too early to tell" tag, the translated-quote note only
   when needed; one clean-up option per clean-up bot; `--list --short`; clearer `--auto` lines; `tests/compare_runs.py`.
+- Iteration 4: `--list` cuts batches by size (about 10 KB) and prints the next `--from`, so no fixed item count (it
+  depends on the chats' script and length); evidence `"who": "bot"` is a keyword shown as `ui.who_bot` (the bot's name
+  by default), never an English word; count-neutral fallback opening sentences, and the host bot writes the one used
+  for the real counts; `ui.footer_q` (quotes are word for word) only when the report has a quote, and `ui.expand_info`
+  for sections with no proposals; fix candidates an incident came after are never cut by the cap, left-out saves are
+  counted (`fix_check_omitted`), and link lists no longer read as fixes or promises; one rule for one-off mistakes vs
+  stated preferences; secrets the user typed and safety events of bots not in the list; `score.basis` documented as
+  internal; option order for clean-up bots outside the top 3, and fixed option strings written in the user's language;
+  `replay` prints what it skipped as self (`self` in `replay.json`, `tests/EVAL.md`).
 - Offline end-to-end and regression tests on synthetic fixtures, and a skill eval kit: replay mode
   (`sessions.py replay`), scenarios and an objective grader (`tests/EVAL.md`).

@@ -19,8 +19,10 @@ and the memory block the app shows the bot. No external APIs, no logins.
   quote or code it produced), and replies the judge marked as promising a lasting change. Listed once per bot
   (`fix_candidates`, with ids), in time order, from the topic's first incident in the whole history; each group's
   `fix_check` refers to them by id with `incidents_after` (this group's incidents after it) and `active_days_after` (days
-  the user used the bot after it), at most the 12 latest. The scripts can't tell whether one is about the group's
-  problem, so candidates change neither status nor impact until you confirm one (`writing.md`).
+  the user used the bot after it). Every candidate an incident came after is kept, however old (a fix that may have
+  failed); of the rest, the 12 latest. A group with more saves than that has `fix_check_omitted` (how many, and their
+  time span) in the draft. The scripts can't tell whether one is about the group's problem, so candidates change neither
+  status nor impact until you confirm one (`writing.md`).
 - **The latest relevant fix decides.** Among the candidates you confirm as about this problem, look only at the latest:
   - **Fixed** (improving): its `incidents_after` = 0 and `active_days_after` ≥ 2. Goes under "Already improving", no
     proposal. This holds even if an earlier fix failed before it.
@@ -37,14 +39,15 @@ and the memory block the app shows the bot. No external APIs, no logins.
 |---|---|
 | Clean up (`red`) | Age ≥ 3 days, idle ≥ max(3 days, half its age), and share < 5%. *Or* its whole job is already done by another bot that is in use, and its history shows no use of its own. |
 | Needs work (`yellow`) | A strong repeated correction with a shared cause that is not fixed; *or* unanswered requests caused by the bot itself (not a fleet outage); *or* a safety problem visible in its chats (for example, it printed another bot's internal settings). |
-| Fine (`green`) | Everything else. An empty description, a single correction or a weak repeated correction can still produce a proposal, but it doesn't change the status. |
+| Fine (`green`) | Everything else. An empty description, a weak repeated correction, a stated preference or another lead (section 4) can still produce a proposal, but it doesn't change the status. A one-off correction never does: no rules from one mistake. |
 
 Why relative thresholds: a fleet may have only a few days of history, so fixed counts ("5 corrections a week") mean nothing yet.
 Share, half-of-age idle and per-request rates scale with however much history exists. A bot younger than 3 days can't be "Clean up" by the idle rule.
 `diagnostics.py` suggests a status from these rules; you set the final one with the procedure in section 5.
 
 ## 3. Proposal scoring
-Every proposal carries `score = {impact, confidence, effort, reversibility, basis}`:
+Every proposal carries `score = {impact, confidence, effort, reversibility, basis}`. `basis` is an internal note (it goes
+to `scores.md` only and is never shown in the report), so it needs no translation:
 - **impact** (1–3): 3 = 4+ incidents, repeated work on 5+ days, or 3+ bots affected; 2 = 2–3 incidents, 3–4 days or 2 bots; 1 = less.
   Add 1 (max 3) if the problem came back after a fix you confirmed.
 - **confidence**: `high` 1.0 / `medium` 0.7 / `low` 0.4, from the rubric confidence of the incidents and whether the evidence is a direct quote.
@@ -73,6 +76,8 @@ Each check gives leads; keep a lead only after reading the actual messages.
 | Same request in several bots | similar text across bots (attachment notices and file paths are stripped first) | noisy (shared links, the same post pasted to several bots); confirm by topic |
 | One bot doing another's job | a request closer to another bot's description than its own, counted only after that bot existed | noisy; keep only clear cases on 2+ days |
 | Safety events | seen while reading: a secret or code printed in a chat or written to a log, another bot's internal settings shown, a risky action taken without asking | one fleet info item per kind of event, naming the bot and date; never quote or repeat the secret. Counts toward "Needs work" for that bot only if it did it itself |
+| Secrets the user typed | the user pasted a password, key or login code into a chat themselves | not a bot's safety event and no status effect. A lasting secret (password, key, token) gets one line in the safety info item ("you shared a password in X's chat on DATE; consider changing it"); a one-time code that has expired gets nothing. Never quote it |
+| Bots not in the list | an event about a bot that isn't in `bots.json` (removed, renamed, or someone else's), seen only in another bot's chat | the fleet safety info item, named as written in that chat and said to be no longer in the list; never a row and no status effect on any listed bot. Don't open files it may have written to check |
 
 Leads that are not corrections (skipped questions, stale memory, promises without delivery) can become scored findings
 with the default impact above, confidence from how clear the evidence is, and effort 1.

@@ -32,15 +32,20 @@ UI_DEFAULT = {
     'kind': {'description': 'Text for the description', 'memory': 'Text for memory', 'routine': 'Text for a new routine', 'other': 'Text to add'},
     'src': {'memory': 'Memory', 'description': 'Description'},
     'why': 'Why this status', 'improving': 'Already improving, nothing to do', 'more': 'More ({n})', 'see': 'See: {ref}',
-    'info': 'For your information', 'collapse': 'Collapse', 'expand': 'Show findings ({n})', 'nothing': 'Nothing major to fix.',
+    'info': 'For your information', 'collapse': 'Collapse', 'expand': 'Show proposals ({n})', 'nothing': 'Nothing major to fix.',
+    'expand_info': 'Show details',   # toggle of a section with no proposals (only information, pointers or nothing)
     'fleet_bot': 'All bots', 'st': {'red': 'Clean up', 'yellow': 'Needs work', 'green': 'Fine'},
-    'lede_all': 'Checked {n} bots. {y} need work and {r} should be cleaned up.', 'lede_none': 'Checked {n} bots. Nothing major to fix.',
-    'lede_y': 'Checked {n} bots. {y} need work.', 'lede_r': 'Checked {n} bots. {r} should be cleaned up.',
+    # Opening sentences. The host bot writes the one make_report will use (lede_of) as a whole sentence for the real
+    # counts; these count-neutral fallbacks avoid singular/plural forms on purpose.
+    'lede_all': 'Bots checked: {n}. Needs work: {y}. Clean-up candidates: {r}.', 'lede_none': 'Bots checked: {n}. Nothing major to fix.',
+    'lede_y': 'Bots checked: {n}. Needs work: {y}.', 'lede_r': 'Bots checked: {n}. Clean-up candidates: {r}.',
     'sel_none': 'Tick the items you want to apply', 'sel_n': '{n} selected', 'go': 'Copy selection', 'sel_prefix': 'Apply: ',
     'pick_first': 'Tick the items to apply first', 'copied_msg': 'Copied: ', 'copy_fail': "Couldn't copy. Please select the text and copy it.",
-    'footer': 'Built from the {date} audit. Quotes are taken word for word from the chats.',
+    'footer': 'Built from the {date} audit.',
+    'footer_q': 'Quotes are taken word for word from the chats.',   # added only when the report has a quote
     'footer_tr': 'Translated quotes show the original below.',   # added only when a translated quote exists
     'in_chat': 'You (in {bot})',   # speaker of a user quote taken from another bot's chat (evidence "chat": bot name)
+    'who_bot': '{bot}',   # speaker of a quote from this bot itself (evidence "who": "bot"); default: the bot's name
     'too_early': 'Too early to tell',   # tag on a finding whose fix was saved too recently to judge ("too_early": true)
 }
 LEDE_KEYS = ('lede_all', 'lede_y', 'lede_r', 'lede_none')
@@ -216,12 +221,12 @@ def inline(s):
 def norm_q(s):
     return re.sub(r'\s+', ' ', s or '').strip()
 
-def ev_item(it):
+def ev_item(it, bot=''):
     if isinstance(it, str):
         m = EVID.match(it); d, rest = (m.group(1), m.group(2)) if m else ('', it)
         return f'<li><span class="d">{E(d)}</span><span>{inline(rest)}</span></li>'
     d = E(it.get('date', ''))
-    wl = T(it.get('who')) or (UI['in_chat'].format(bot=T(it['chat'])) if it.get('chat') else '') \
+    wl = (UI['who_bot'].format(bot=bot) if is_bot_who(it.get('who')) and bot else T(it.get('who'))) or (UI['in_chat'].format(bot=T(it['chat'])) if it.get('chat') else '') \
         or (UI['src'].get(it.get('source'), '') if it.get('source') in ('memory', 'description') else '')
     who = f'<span class="who">{E(wl)}</span>' if wl else ''
     aft = f'<span class="aft">{E(T(it["after"]))}</span>' if it.get('after') else ''
@@ -236,6 +241,10 @@ def ev_item(it):
             main = T(qd)
         return f'<li><span class="d">{d}</span><span>{who}<q>{E(main)}</q>{aft}{orig}</span></li>'
     return f'<li><span class="d">{d}</span><span>{who}{E(T(it.get("text")))}{aft}</span></li>'
+
+def is_bot_who(w):
+    """Evidence "who": "bot" is a keyword (the quote is this bot's own words), not text shown as written."""
+    return isinstance(w, str) and w.strip().lower() == 'bot'
 
 REFS = {}
 def REFNAME(ref):
@@ -261,7 +270,7 @@ def finding(f, bot_name, anchor, n):
     return (f'<div class="f{" pass" if passive else ""}" id="{E(anchor)}-{n}"><div class="no">{n}</div><div>'
             f'<div class="hd"><h4>{E(T(f["title"]))}'
             + (f' <span class="tag">{E(t["too_early"])}</span>' if f.get('too_early') else '') + f'</h4>{ap}</div>'
-            f'<ul class="ev">{"".join(ev_item(x) for x in f.get("now", []))}</ul>'
+            f'<ul class="ev">{"".join(ev_item(x, bot_name) for x in f.get("now", []))}</ul>'
             f'<p class="fx"><b>{E(lab)}</b>{E(T(f.get("fix")))}{see}</p>{cp}</div></div>')
 
 def NPROP(b):
@@ -285,6 +294,21 @@ def lede_of(d):
     bots = d['bots']; c = {k: sum(1 for b in bots if b['status'] == k) for k in ('red', 'yellow', 'green')}
     key = 'lede_all' if c['yellow'] and c['red'] else 'lede_y' if c['yellow'] else 'lede_r' if c['red'] else 'lede_none'
     return key, UI[key].format(n=len(bots), y=c['yellow'], r=c['red'])
+
+def has_quote(d):
+    return any(isinstance(e, dict) and e.get('quote') or isinstance(e, str) and '"' in e
+               for _, f in all_findings(d) for e in f.get('now', []))
+
+def toggle(items):
+    """Collapsed-section label: the number of proposals (as in the status table), or expand_info when there are none."""
+    n = sum(1 for f in items if not f.get('info') and not f.get('see'))
+    return UI['expand'].format(n=n) if n else UI['expand_info']
+
+def footer(d):
+    t = UI; parts = [t['footer'].format(date=(d.get('date_label') or d['date']))]
+    if has_quote(d) and t.get('footer_q'): parts.append(t['footer_q'])
+    if has_translation(d) and t.get('footer_tr'): parts.append(t['footer_tr'])
+    return ' '.join(parts)
 
 def has_translation(d):
     return any(isinstance(e, dict) and isinstance(e.get('quote'), dict) and e['quote'].get('translation')
@@ -325,7 +349,7 @@ def body(d, print_mode=False):
         secs.append(f'<details class="bot" id="bot-{E(b["id"])}"{op}><summary><h3>{E(nm)}{gloss(b)}</h3>'
                     f'<span class="stt {cls[b["status"]]}"><span class="mk"></span>{E(t["st"][b["status"]])}</span>'
                     f'<span class="iss">{E(T(b["issue"]))}</span>'
-                    f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(t["expand"].format(n=len(b["findings"])))}</span></span></summary>{fs}</details>')
+                    f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(toggle(b["findings"] + b.get("more", [])))}</span></span></summary>{fs}</details>')
     fleet = ''.join(finding(f, t['fleet_bot'], 'fleet', i) for i, f in enumerate(d.get('fleet', []), 1))
     return f"""<div class="page">
 <header><h1>{E(T(d['title']).split(' (')[0])}</h1><p class="when">{E(t['when'].format(date=(d.get('date_label') or d['date'])))}</p><p class="lede">{E(lede)}</p></header>
@@ -336,8 +360,8 @@ def body(d, print_mode=False):
 <h2>{E(t['fleet'])}</h2>
 {f'<p class="note">{E(t["fleet_note"])}</p>' if t.get('fleet_note') else ''}
 <details class="bot" id="bot-fleet" open><summary><h3>{E(t['fleet_h'])}</h3><span class="stt"></span><span class="iss">{E(t['fleet_iss'])}</span>
-<span class="tog"><span class="o">{E(t['collapse'])}</span><span class="c">{E(t['expand'].format(n=len(d.get('fleet', []))))}</span></span></summary>{fleet}</details>
-<footer>{E(t['footer'].format(date=(d.get('date_label') or d['date'])) + ((' ' + t['footer_tr']) if has_translation(d) and t.get('footer_tr') else ''))}</footer>
+<span class="tog"><span class="o">{E(t['collapse'])}</span><span class="c">{E(toggle(d.get('fleet', [])))}</span></span></summary>{fleet}</details>
+<footer>{E(footer(d))}</footer>
 </div>"""
 
 def page(d, print_mode=False):
@@ -371,6 +395,14 @@ def visible(h):
     h = re.sub(r'<(script|style)\b.*?</\1>', ' ', h, flags=re.S)
     return re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', h)))
 
+# Labels shown only in some reports; check_report flags them only when the report uses them.
+CONDITIONAL = ('n_items', 'fleet_note', 'footer_tr', 'footer_q', 'in_chat', 'too_early', 'expand_info', 'who_bot',
+               'lede_all', 'lede_y', 'lede_r', 'lede_none')
+
+def placeholder_only(v):
+    """A label made only of {placeholders} and punctuation (e.g. "{bot}") has no words to translate."""
+    return isinstance(v, str) and not re.search(r'\w', re.sub(r'\{\w+\}', '', v))
+
 def check_report(d, h):
     """Shape checks over the whole report (every page): leftover TODO, empty boxes, English fallback labels."""
     out = []
@@ -381,10 +413,14 @@ def check_report(d, h):
     if re.search(r'<td class="i">\s*</td>', h): out.append('a bot with no current issue')
     if str(d.get('lang', 'en')).split('-')[0] != 'en':
         same = [k for k, v in UI_DEFAULT.items() if isinstance(v, str) and len(v) > 3 and UI.get(k) == v
-                and k not in ('n_items', 'fleet_note', 'footer_tr', 'in_chat', 'too_early', 'lede_all', 'lede_y', 'lede_r', 'lede_none')]
+                and k not in CONDITIONAL and not placeholder_only(v)]
         k, _ = lede_of(d)
         if UI.get(k) == UI_DEFAULT.get(k): same.append(k)
         if has_translation(d) and UI.get('footer_tr') == UI_DEFAULT['footer_tr']: same.append('footer_tr')
+        if has_quote(d) and UI.get('footer_q') == UI_DEFAULT['footer_q']: same.append('footer_q')
+        secs = [b['findings'] + b.get('more', []) for b in d['bots']] + [d.get('fleet', [])]
+        if any(not any(not f.get('info') and not f.get('see') for f in x) for x in secs) and UI.get('expand_info') == UI_DEFAULT['expand_info']:
+            same.append('expand_info')
         if any(e.get('chat') for _, f in all_findings(d) for e in f.get('now', []) if isinstance(e, dict)) and UI.get('in_chat') == UI_DEFAULT['in_chat']: same.append('in_chat')
         if any(f.get('too_early') for _, f in all_findings(d)) and UI.get('too_early') == UI_DEFAULT['too_early']: same.append('too_early')
         if same: out.append('labels still in English: ' + ', '.join(same))

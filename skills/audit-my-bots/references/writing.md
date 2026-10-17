@@ -18,6 +18,8 @@ thresholds are in `criteria.md`. Everything the reader sees is written by you in
   - `incidents_after` ≥ 1: came back. Keep the finding, add "came back after a fix" to `score.basis` and raise
     `score.impact` by 1 (max 3). The `copy` must not repeat the rule that already failed; make it more specific.
   - None is about this problem: ignore them.
+  - `fix_check_omitted` means more saves exist than are listed (none had an incident after it). If none of the listed
+    ones fits, look for the rest in `$W/timelines/<id>.json` (events with `kind` `memory_write`) in that time span.
   - Then delete `fix_check` (finalize `--strict` refuses a draft that still has one). finalize drops `fix_candidates`.
 
 ## Status
@@ -40,8 +42,12 @@ one sentence.
   period covered comes from the data; mention it only if useful.
 - Evidence dates (`now[].date`) come as `MM/DD`. You may rewrite them the way the reader writes dates, but use one
   format throughout the report.
-- Footer: `ui.footer` is the base sentence; `ui.footer_tr` (about translated quotes) is added only when a translated
-  quote exists, so write both.
+- Footer: `ui.footer` is the base sentence; `ui.footer_q` (quotes are word for word) is added only when the report has
+  a quote, and `ui.footer_tr` (about translated quotes) only when a translated quote exists. Write all three; with no
+  quotes the footer is just the base sentence.
+- Opening sentence: write the `ui.lede_*` key that fits the final statuses (`findings-schema.md`, UI labels) as a
+  natural sentence for those counts, singular or plural; don't leave a form like "1 need work".
+- `score.basis` is internal (only in `scores.md`); it is never shown, so it can stay short and in any language.
 - Placeholder text: every English string the skeleton wrote is recorded (lines made only of bot names are not); when the report language isn't English,
   finalize `--strict` lists any left unchanged (including `ui` labels).
 - Fleet section: the keep / clean-up item already says nothing is deleted automatically and how to clean up; don't
@@ -58,17 +64,22 @@ one sentence.
 - `source` (`memory` or `description`) goes on the evidence line that holds the quote, nowhere else.
 - Never quote file paths, attachment notices or secrets.
 - One evidence line holds either a `quote` or a `text`, not both (finalize refuses both). `who` names the speaker when the
-  quote isn't from this bot's own chat with the user (for example, another bot's name in a fleet item).
+  quote isn't the user's words in this bot's chat: `"who": "bot"` for this bot's own words (shown as `ui.who_bot`, by
+  default its name), or another bot's name in a fleet item. Never write a fallback word like "Bot" in another language
+  than the report's.
 - Quote the sentence that decided the label; for a long message, a full sentence or two, never a draft cut mid-sentence.
 
 ## Leads and other items
 - `leads` may stay in the draft; finalize drops it. Use it as a checklist.
 - **Unanswered requests** (not part of a fleet outage) are an info item in the bot's findings, not a scored proposal.
-- **Bots not in `bots.json`** (seen only in other chats) are never rows or bot sections. A safety event about one goes
-  in a fleet info item.
+- **Bots not in `bots.json`** (seen only in other chats, for example a bot the user removed) are never rows or bot
+  sections and change no listed bot's status. A safety event about one goes in the fleet safety info item: name it as
+  the chat does, say it is no longer in the list, and say what the user can do. Don't open files it wrote to check.
 - **Safety events** you saw in the chats (a secret printed or written to a log, another bot's settings shown, a risky
   step taken without asking): one fleet info item per kind, saying which bot and when, and what to do (for example,
   change that password). Describe the secret ("a login code"); never quote it.
+- **Secrets the user typed** (a password or code pasted into a chat): not a bot's safety event, no status effect. A
+  lasting secret gets one line in the safety item suggesting a change; an expired one-time code gets nothing.
 - **Leads that aren't corrections** (several skipped questions of one kind, a stale memory fact, a promise not kept)
   can be scored findings with the default impact in `criteria.md` §4.
 - **Stale memory:** a finding only if later chats contradict the fact, or the fact has clearly expired (for example, a
@@ -80,3 +91,11 @@ one sentence.
   `copy` is a list of `{"bot", "text"}`.
 - **No proposals at all:** the report hides the top-3 section. In the chat, say in one line that there is nothing to
   do, skip the multi-select, and only offer the weekly re-check.
+
+## Chat message and options (SKILL.md steps 8-9)
+- The fixed strings in SKILL.md and these references ("Show me how to clean up X", "None for now", "Nothing major to
+  fix.") are examples of meaning, not text to copy: write them in the user's language, like every other word.
+- Option order: the top 3 in their order, then every other proposal in report order (bot sections top to bottom, each
+  bot's findings in order, then the fleet items). A clean-up bot has one option ("show me how to clean up X"): at its
+  top-3 place if one of its findings is there, otherwise at its bot's place in report order. "None for now" is last.
+- Never label an option remove, delete or merge, in any language.

@@ -15,7 +15,7 @@
       Testing only (tests/EVAL.md): instead of steps 1-2, copy DIR/bots.json and DIR/transcripts/<id>/page_*.txt
       (pre-saved pages) into W, plus DIR/replay.json ({"now": "YYYY-MM-DD HH:MM", "self": "<id>"}) if present. DIR
       defaults to $AUDIT_REPLAY_DIR. The bot skipped as "self" is --self, else replay.json's "self", else none: every
-      other listed bot is audited.
+      other listed bot is audited, also one with the same name as the bot running the test (it prints what it skipped).
 
 Read-only on bot data. Never opens anything except profile.json and the saved pages.
 """
@@ -64,7 +64,9 @@ def replay(a):
         sys.exit('replay: give --from DIR or set AUDIT_REPLAY_DIR (a folder with bots.json and transcripts/<id>/page_*.txt)')
     os.makedirs(a.work, exist_ok=True)
     me = a.self or load_json(os.path.join(src, 'replay.json'), {}).get('self')
-    bots = [b for b in load_json(os.path.join(src, 'bots.json'), []) if b['id'] != me]
+    allb = load_json(os.path.join(src, 'bots.json'), [])
+    bots = [b for b in allb if b['id'] != me]
+    skipped = [b['name'] for b in allb if b['id'] == me]
     dump_json(bots, os.path.join(a.work, 'bots.json'))
     if os.path.isfile(os.path.join(src, 'replay.json')):
         shutil.copyfile(os.path.join(src, 'replay.json'), os.path.join(a.work, 'replay.json'))
@@ -74,8 +76,10 @@ def replay(a):
         if os.path.basename(os.path.dirname(p)) not in ids: continue
         d = os.path.join(a.work, 'transcripts', os.path.basename(os.path.dirname(p)))
         os.makedirs(d, exist_ok=True); shutil.copyfile(p, os.path.join(d, os.path.basename(p))); n += 1
-    print(f'replay: {len(bots)} bots, {n} saved pages from {src} -> {a.work}. Every listed bot is audited. '
-          f'Next: sessions.py parse.')
+    who = (f'Skipped as self (the bot that ran the audit): {skipped[0]}.' if skipped else
+           f'Self {me} is not in this fleet; nothing skipped.' if me else 'No self recorded; nothing skipped.')
+    print(f'replay: {len(bots)} bots, {n} saved pages from {src} -> {a.work}. {who} Every bot listed below is audited, '
+          f'including one that shares your own name. Next: sessions.py parse.')
     for b in bots:
         print(f"{b['id']}\t{b['name']}")
 

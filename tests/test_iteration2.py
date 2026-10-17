@@ -98,7 +98,7 @@ def main():
         r = run(f'{S}/judge_inputs.py', '--work', W, '--list')
         check(r.stdout.count('Here is design B') == 1 and '(= next> of #' in r.stdout, '3. --list shows each bot message once')
         r2 = run(f'{S}/judge_inputs.py', '--work', W, '--list', '--short')
-        check(len(r2.stdout) < len(r.stdout) and re.search(r'-- \d+ items, [\d.]+ KB; about \d+ items', r2.stdout)
+        check(len(r2.stdout) < len(r.stdout) and re.search(r'-- \d+ items \(#\d+-#\d+\), [\d.]+ KB; (next batch: --from \d+|that was the last item)', r2.stdout)
               and 'Too long, the intro is useless' in r2.stdout, '3. --short keeps user text, cuts bot text, and reports the batch size')
         # 4. labels
         byu = {x['user']: x for x in ji}

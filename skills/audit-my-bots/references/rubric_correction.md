@@ -41,8 +41,9 @@ tab-separated columns, `\N` or `-` for an empty cell:
 | user_start | the first 5–10 characters of `user`, copied; `--label` refuses the line if they don't match the item |
 
 Example: `17<TAB>correction<TAB>format_length<TAB>high<TAB>too long again<TAB>yes<TAB>Too long`
-Work in batches (SKILL.md step 4): `--list --short` about 50 items, append that batch's lines, run `--label`, check
-the echo, then the next batch. Each run rewrites `labels.json` from the whole file. A refused line (unknown item or type,
+Work in batches (SKILL.md step 4): `--list --short --from N` prints about 10 KB of items (fewer items for long
+messages or non-Latin scripts) and ends with the next `--from`; append that batch's lines, run `--label`, check the
+echo, then the next batch. Each run rewrites `labels.json` from the whole file. A refused line (unknown item or type,
 or a `user_start` mismatch) must be fixed before going on. No corrections or preferences at all: an empty file, and
 `--label` still runs (every item becomes `none`).
 
@@ -117,4 +118,5 @@ Not corrections (label false):
 ## After judging (done by diagnostics.py, not by you)
 - Corrections on the same topic in the same bot within 60 minutes are one **incident** (one exchange).
 - A **repeated correction** is the same bot and topic in 2 or more incidents on 2 or more separate occasions (more than 6
-  hours apart). Only repeated corrections can become proposals; one-off mistakes never become rules.
+  hours apart). Only repeated corrections can become correction proposals; one-off mistakes never become rules. A
+  `preference` (a standing wish the user stated) is the exception: it may become a memory proposal on its own.

@@ -10,10 +10,13 @@ r"""Bot Audit, step 3: pick user messages that might be corrections, export judg
       replies match no cue at all gets all its replies exported anyway. --auto picks per bot: every reply unless at
       least 8 in 10 of the bot's typed user messages are written mostly in Latin letters (the only messages the
       built-in English cues can match). Each bot's line prints that share and the recommended mode.
-  python3 judge_inputs.py --work W --list [--from N] [--to M] [--short | --width N]
+  python3 judge_inputs.py --work W --list [--from N] [--to M | --kb K] [--short | --width N]
       Compact view: one block per item with short excerpts, numbered. A bot message already shown as the previous
       item's "next>" is not repeated. --short cuts bot text to 100 characters (user text stays at 400); --width N sets
-      the bot excerpt length. The last line says how big the batch was and how many items fit in about 10 KB.
+      the bot excerpt length. Without --to, it prints one batch of about 10 KB (--kb K to change) and its last line
+      gives the --from of the next batch. How many items fit depends on the chats (non-Latin scripts take more bytes
+      per character), so batches are cut by size, not by a fixed count. With --to, the last line says how many items
+      of this size fit in about 10 KB.
   python3 judge_inputs.py --work W --show N|KEY [...]
       The full messages around these items.
   python3 judge_inputs.py --work W --label FILE
@@ -101,20 +104,28 @@ def show(work, refs):
         print(f'== {ref} ({tl["name"]}, {e["ts"]})\n-- request:\n{req["text"] if req else "(none)"}\n-- bot before:\n{p["text"]}{card_text(cards)}'
               f'\n-- user:\n{e["text"]}\n-- bot after:\n' + ('\n\n'.join(n) or '(no reply)') + '\n')
 
-def listing(work, lo, hi, width=220):
-    prev, size, n = None, 0, 0
+def listing(work, lo, hi, width=220, kb=0):
+    """Items lo..hi. With kb > 0, stop once the batch reaches about kb KB (bytes, so the count depends on the script and
+    length of the messages) and print the --from of the next batch."""
+    prev, size, n, first, last, more = None, 0, 0, None, None, None
     for x in load_items(work):
         if lo <= x['n'] <= hi:
+            if kb and n and size >= kb * 1024:
+                more = x['n']; break
             same = prev and prev['bot'] == x['bot'] and prev['next_bot'] and norm(prev['next_bot'])[:120] == norm(x['prev_bot'])[:120]
             bot = f"(= next> of #{prev['n']})" if same else ex(x['prev_bot'], width, 0.3)
             block = (f"#{x['n']} {x['bot_name']} {x['ts']}\n  bot> {bot}\n  user> {ex(x['user'], 400, 0.7)}\n"
                      f"  next> {ex(x['next_bot'], width, 0.3) or '(no reply)'}")
-            print(block); size += len(block.encode('utf-8')) + 1; n += 1
+            print(block); size += len(block.encode('utf-8')) + 1; n += 1; last = x['n']; first = first or x['n']
         prev = x
     if n:
         per = size / n
-        print(f"-- {n} items, {size / 1024:.1f} KB; about {max(5, int(10240 // per))} items of this size fit in 10 KB"
+        tail = (f'; next batch: --from {more}' if more else '; that was the last item') if kb else \
+            f"; about {max(5, int(10240 // per))} items of this size fit in 10 KB"
+        print(f"-- {n} items (#{first}-#{last}), {size / 1024:.1f} KB{tail}"
               + ('' if width <= 100 else ' (--short makes items smaller)'))
+    elif kb:
+        print('-- no items from #%d on: that was the last batch' % lo)
 
 def label(work, path):
     items = load_items(work); out, bad = {}, []
@@ -152,10 +163,13 @@ def main():
     ap.add_argument('--show', nargs='+', metavar='N'); ap.add_argument('--list', action='store_true')
     ap.add_argument('--from', dest='lo', type=int, default=1); ap.add_argument('--to', dest='hi', type=int, default=10 ** 9)
     ap.add_argument('--short', action='store_true'); ap.add_argument('--width', type=int, default=220)
+    ap.add_argument('--kb', type=float, help='with --list and no --to: stop after about this many KB (default 10)')
     ap.add_argument('--label', metavar='FILE')
     a = ap.parse_args()
     if a.show: return show(a.work, a.show)
-    if a.list: return listing(a.work, a.lo, a.hi, 100 if a.short else a.width)
+    if a.list:
+        kb = a.kb if a.kb is not None else (0 if a.hi < 10 ** 9 else 10)
+        return listing(a.work, a.lo, a.hi, 100 if a.short else a.width, kb)
     if a.label: return label(a.work, a.label)
     cues, _ = load_cues(a.work); DIRECTIVE = cues['directive']
     out, per = [], []

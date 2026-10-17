@@ -37,6 +37,13 @@ this skill.
 ```
 Make a real-run replay folder from a finished work folder:
 `mkdir -p R && cp -r W/transcripts W/bots.json R/ && echo '{"now": "<diag.json now>"}' > R/replay.json`.
+**`self` in a replay.** The bot that ran the recorded audit skipped itself, so its own chat is normally not in
+`bots.json`. If it is (for example, `bots.json` was copied from a run with no `--self`), add
+`"self": "<its agent id>"` to `replay.json`; `sessions.py replay --from R --self <id>` does the same for one run. Never
+skip by name: the fleet may hold a bot with the same name as the agent running the test (both called like the app's
+default bot, say), and that bot is part of the recorded fleet, so it is audited. `replay` prints which bot it skipped as
+self, or that nothing was skipped; SKILL.md's testing note tells the agent the same. When a scenario's statuses look
+off, check that line first.
 **Consistency:** run one scenario two or more times with fresh agents (plus the same fleet in another language) and
 compare: `python3 tests/compare_runs.py a=<work1> b=<work2> ...` prints the per-bot status table, the share of bots with
 the same status in every run (and pairwise), and the top-3 overlap by target bot. Trace each difference to the judgment
@@ -74,6 +81,7 @@ python3 tests/test_pipeline.py      # end to end on the synthetic fleet, English
 python3 tests/test_regressions.py   # issues found in real runs (fetch batching, --all, excerpts, notices, copy lists...)
 python3 tests/test_iteration2.py    # consistency fixes: occasions, fix facts, safer labels, placeholders, quotes
 python3 tests/test_iteration3.py    # lede file, whole-report checks, deduped fix candidates, chat label, compare_runs
+python3 tests/test_iteration4.py    # size-cut batches, "who": "bot", count-neutral ledes, footer, fix-candidate cap, links, self
 python3 tests/test_grade.py         # grade.py itself: a clean run scores 1.0, known-bad outputs fail
 ```
 

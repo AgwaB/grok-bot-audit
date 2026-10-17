@@ -27,7 +27,7 @@ SENT_SPLIT = re.compile(r'(?<=[.!?\u3002\uff01\uff1f])\s+')
 def addressed_sentence(text, rx, long_draft=600, edge=250):
     """The sentence where the bot tells the user about a lasting change, or None if the cue only appears inside
     content the bot drafted: code blocks, quoted or table lines, or the middle of a long draft."""
-    text = text or ''
+    text = drop_links(text)
     lines, fence = [], False
     for ln in text.splitlines():
         if ln.strip().startswith('```'): fence = not fence; continue
@@ -42,6 +42,18 @@ def addressed_sentence(text, rx, long_draft=600, edge=250):
     sent = norm(body[start:(min(ends) + 1 if ends else len(body))])
     if sent.count('"') % 2 or sent.count('\u201c') != sent.count('\u201d'): return None   # inside a quotation
     return sent[:300]
+
+LINK_RE = re.compile(r'\[([^\]\n]*)\]\([^)\s]+\)|<?\bhttps?://\S+|\bwww\.\S+')
+LIST_RE = re.compile(r'^\s*(?:[-*\u2022]|\d+[.)])\s+')
+
+def drop_links(text):
+    """Text without link lists: list lines that hold a link are dropped, and remaining links lose their target and
+    title, so words inside a link title ("Going forward: ...") or a list of sources never read as a promise or a fix."""
+    out = []
+    for ln in (text or '').splitlines():
+        if LINK_RE.search(ln) and LIST_RE.match(ln): continue
+        out.append(LINK_RE.sub(' ', ln))
+    return '\n'.join(out)
 
 def last_sentence(text):
     parts = [norm(x) for x in SENT_SPLIT.split(norm(text)) if norm(x)]
@@ -95,7 +107,7 @@ def main():
         for k, v in labels.items():
             if k.startswith(bid + ':') and v.get('fix_promised') and k in jin and jin[k].get('ts'):
                 nb = jin[k].get('next_bot', '')
-                fixes.append(dict(ts=jin[k]['ts'], kind='bot_promised', text=addressed_sentence(nb, FIX) or last_sentence(nb)))
+                fixes.append(dict(ts=jin[k]['ts'], kind='bot_promised', text=addressed_sentence(nb, FIX) or last_sentence(drop_links(nb)) or last_sentence(nb)))
         seen, uniq = set(), []
         for f in sorted(fixes, key=lambda f: f['ts']):   # one entry per distinct save or promise
             sig = (f['kind'] == 'memory_write', norm(f['text']).lower())
@@ -123,12 +135,19 @@ def main():
             # incident on. Whether one is about this group's problem can't be told from words, so they are candidates:
             # they change neither status nor impact until the host bot confirms. Each carries the facts the decision
             # needs: incidents of this group after it, and days of use after it.
-            # The window starts at this topic's first incident in the whole history; at most FIX_MAX, the latest kept
-            # (the latest relevant fix decides), in time order. Full texts are listed once per bot (fix_candidates).
+            # The window starts at this topic's first incident in the whole history, in time order. Full texts are
+            # listed once per bot (fix_candidates).
             cand = [dict(id=f['id'], ts=f['ts'], incidents_after=sum(1 for t in g['incident_times'] if t and t > f['ts']),
                          active_days_after=sum(1 for d in user_days if d > f['ts'][:10]))
                     for f in fixes if g['first'] and f['ts'] >= g['first']]
-            g['fix_candidates'] = cand[-FIX_MAX:]
+            # Every candidate an incident came after (a fix that may have failed) is kept, however old; of the rest
+            # (no incident after them), the FIX_MAX latest. Any left out are counted, so nothing is hidden silently.
+            late = [c for c in cand if not c['incidents_after']]
+            keep = {c['id'] for c in cand if c['incidents_after']} | {c['id'] for c in late[-FIX_MAX:]}
+            g['fix_candidates'] = [c for c in cand if c['id'] in keep]
+            if len(cand) > len(keep):
+                g['fix_candidates_omitted'] = dict(count=len(cand) - len(keep), first=cand[0]['ts'],
+                                                   last=max(c['ts'] for c in cand if c['id'] not in keep))
             g['strong'] = g['repeated'] and (g['incidents'] >= 3 or g['rate'] >= 0.05) and any(c != 'low' for c in g['confidences'])
             g.pop('incident_times')
         prefs = [k for k, v in labels.items() if k.startswith(bid + ':') and v.get('type') == 'preference']
@@ -156,7 +175,7 @@ def main():
         # ---- promises followed by a nudge
         promises = []
         for k2, e in enumerate(seq):
-            if e['role'] == 'bot' and len(e['text']) < 240 and PROMISE.search(e['text']) and k2 + 1 < len(seq) \
+            if e['role'] == 'bot' and len(e['text']) < 240 and PROMISE.search(drop_links(e['text'])) and k2 + 1 < len(seq) \
                     and seq[k2 + 1]['role'] == 'user' and NUDGE.search(norm(seq[k2 + 1]['text'])) and len(norm(seq[k2 + 1]['text'])) <= 20:
                 promises.append(dict(ts=e['ts'], bot=norm(e['text'])[:120], next_user=norm(seq[k2 + 1]['text'])[:40]))
         # ---- memory block

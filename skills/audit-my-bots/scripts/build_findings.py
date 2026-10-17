@@ -106,6 +106,9 @@ def skeleton(a):
             if g.get('fix_candidates'):
                 # unverified: the host bot decides whether any of these is about this problem (references/writing.md)
                 item['fix_check'] = g['fix_candidates']
+            if g.get('fix_candidates_omitted'):
+                # more saves than are listed, all with no incident after them: the timeline has the rest (kind memory_write)
+                item['fix_check_omitted'] = g['fix_candidates_omitted']
             findings.append(item)
         for r in b['repeated_requests'][:1]:
             if len(r['days']) >= 3:
@@ -136,7 +139,7 @@ def skeleton(a):
                          improving=improving, findings=findings, needs_review=True,
                          **({'fix_candidates': b['fix_candidates']} if b.get('fix_candidates') and any('fix_check' in f for f in findings) else {})))
     if empty:
-        fleet.append(dict(title=f'{len(empty)} bots have no description',
+        fleet.append(dict(title=f'Bots with no description: {len(empty)}',
                           now=[dict(date='', text=', '.join(diag['bots'][x]['name'] for x in empty))],
                           fix='Paste a short description into each bot, written from how you actually use it.',
                           copy=[dict(bot=diag['bots'][x]['name'], text='TODO description') for x in empty],
@@ -219,8 +222,9 @@ def finalize(a):
         for where, t in visible_strings(draft):
             if isinstance(t, str) and t in left and not names_only(t, names):
                 warns.append(f'{where}: still the skeleton\'s placeholder text ("{t[:50]}"); write it in the report language')
-        from make_report import UI_DEFAULT
-        same = [k for k, v in (draft.get('ui') or {}).items() if isinstance(v, str) and len(v) > 3 and v == UI_DEFAULT.get(k)]
+        from make_report import UI_DEFAULT, placeholder_only
+        same = [k for k, v in (draft.get('ui') or {}).items() if isinstance(v, str) and len(v) > 3 and v == UI_DEFAULT.get(k)
+                and not placeholder_only(v)]
         if same: warns.append('ui labels still in the fallback language: ' + ', '.join(same[:12]))
     for b in draft['bots']:
         if b.get('status') not in ('green', 'yellow', 'red'):
@@ -241,6 +245,8 @@ def finalize(a):
         if any('TODO' in t for t in copy_texts(f)): warns.append(where + ': copy still has TODO')
         for e in f.get('now', []):
             q = e.get('quote')
+            if not b and isinstance(e.get('who'), str) and e['who'].strip().lower() == 'bot':
+                errors.append(where + ': "who": "bot" means this bot, but a fleet item has none; write that bot\'s name in "who"')
             if q and e.get('text'):
                 errors.append(where + ': an evidence line has both "quote" and "text"; use two lines'); continue
             if not q: continue
@@ -278,7 +284,9 @@ def finalize(a):
     if not draft.get('top3_locked'):
         draft['top3'] = [dict(text=f.get('short') or f['title'], ref=r) for _, _, r, f in cands[:3]]
     draft.pop('leads', None); draft.pop('_skeleton', None)
-    for b in draft.get('bots', []): b.pop('fix_candidates', None)
+    for b in draft.get('bots', []):
+        b.pop('fix_candidates', None)
+        for f in b.get('findings', []) + b.get('more', []): f.pop('fix_check_omitted', None)
     with open(os.path.join(a.work, 'scores.md'), 'w', encoding='utf-8') as fh:
         fh.write('| rank | ref | title | score | impact | confidence | effort | reversibility | basis |\n|---|---|---|---|---|---|---|---|---|\n')
         for k, (v, _, r, f) in enumerate(cands, 1):
