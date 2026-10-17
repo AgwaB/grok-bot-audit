@@ -6,7 +6,8 @@ Judge only from the three excerpts. Do not guess what happened outside them. Wor
 
 ## Input (one item)
 ```
-prev_bot: the bot's last message before the user's message (may be cut)
+request:  the user's message that started this exchange (context only; may be empty)
+prev_bot: the bot's last message before the user's message (may be cut), plus any question cards
 user:     the user's message
 next_bot: the bot's reply after it (may be empty if it never answered)
 ```
@@ -21,7 +22,10 @@ next_bot: the bot's reply after it (may be empty if it never answered)
 ```
 - `label` is true **only** when `type` is `correction`.
 - `topic` is null when `label` is false.
-- `evidence` quotes the few words (from `user` or `next_bot`) that decided it.
+- `evidence` quotes the few words (from `user` or `next_bot`) that decided it. Never copy secrets (codes, keys,
+  passwords) into it.
+- Record verdicts as TSV lines `n<TAB>type<TAB>topic<TAB>confidence<TAB>evidence` and run `judge_inputs.py --label`
+  (SKILL.md step 4).
 
 ## Types
 | type | meaning | label |
@@ -43,7 +47,10 @@ next_bot: the bot's reply after it (may be empty if it never answered)
 6. Is it a lasting wish ("from now on", "by default") with no objection to the last output? → `preference`. With an objection, go back to step 2.
 7. Otherwise → the non-correction type that fits best.
 
-A long pasted draft or brief (over ~300 characters, or a numbered outline) is a `new_request` unless its first line criticises the bot.
+A long pasted draft or brief (over ~300 characters, or a numbered outline) is a `new_request` unless the message, anywhere
+in it (often after the pasted part), criticises the bot's previous output; then judge it from step 2.
+`prev_bot` may end with `[question card: …]`: a choice the app showed the user. Answering or skipping it is a
+`clarification`, not a correction. `request` is the user's message that started the exchange, for context.
 
 ## Fixed topics (use exactly these)
 | topic | covers |

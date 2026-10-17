@@ -141,6 +141,11 @@ def main():
         real = sum(1 for f in b.get('findings', []) + b.get('more', []) if not f.get('see') and not f.get('info'))
         if b['id'] in rows and int(rows[b['id']]) != real: wrong.append(f"{b['name']}: {rows[b['id']]} vs {real}")
     check('Proposals counts exclude pointers and info items', h and not wrong, wrong or 'ok')
+    check('no empty sections (e.g. an empty top 3)', h and not re.search(r'<ol class="top">\s*</ol>|<ul class="ev">\s*</ul>\s*<p class="fx"><b>[^<]*</b>\s*</p>', h), 'ok')
+    if chat:
+        lm = re.search(r'<p class="lede">(.*?)</p>', h, re.S)
+        lede = norm(html.unescape(lm.group(1))) if lm else ''
+        check('chat opens with the same sentence as the report', lede and lede in norm(chat), lede[:120])
     todo = [b['name'] for b in d.get('bots', []) if not b.get('issue') or not b.get('why') or 'TODO' in str(b.get('issue'))]
     check('every bot has an issue and a reason for its status', d and not todo, todo or 'ok')
     refs = {f"{b['id']}-{i}" for b in d.get('bots', []) for i in range(1, len(b.get('findings', [])) + 1)} | {f'fleet-{i}' for i in range(1, len(d.get('fleet', [])) + 1)}

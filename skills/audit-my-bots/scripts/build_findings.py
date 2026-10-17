@@ -4,7 +4,8 @@
   python3 build_findings.py skeleton --work W [--lang <BCP 47 code of the user's language, default en>]
       W/diag.json (+ timelines, labels) -> W/findings_draft.json
       A starting point: statuses from the criteria, one draft finding per repeated correction group or
-      repeated request, verbatim evidence quotes, and "leads" to check. Items marked needs_review=true
+      repeated request, verbatim evidence quotes, and "leads" to check. Memory saves after a group started
+      are listed in the finding's "fix_check" (unverified) for the host bot to confirm or drop. Items marked needs_review=true
       carry placeholder English text. The host bot writes all wording in the user's language (text fields,
       "ui" labels, "date_label", quote translations), drops noise, and removes needs_review.
   python3 build_findings.py finalize --work W [--draft FILE] [--strict]
@@ -72,16 +73,16 @@ def skeleton(a):
             if not g['repeated']:
                 continue
             title, fix = TOPIC.get(topic, TOPIC['other'])
-            if g['possibly_fixed']:
-                improving.append(f'{title}: the bot recorded a fix on {g["fixes_after_last"][0]["ts"][5:10]} and it has not come back')
-                continue
             ev = [dict(date=jin[k]['ts'][5:10].replace('-', '/') if jin.get(k, {}).get('ts') else '', quote={'orig': norm(txt(k))[:200]})
                   for k in g['keys'][:4]]
             conf = 'high' if g['confidences'].count('high') >= max(1, len(g['confidences']) // 2) else 'medium'
-            findings.append(dict(title=title, now=ev, fix=fix, copy=None, copy_kind='memory', needs_review=True, topic=topic,
-                                 score=dict(impact=impact_from(g['incidents'], recurred=g['recurred_after_fix']), confidence=conf,
-                                            effort=1, reversibility=1.0,
-                                            basis=f"{g['incidents']} incidents on {len(g['days'])} days" + (' (came back after a fix)' if g['recurred_after_fix'] else ''))))
+            item = dict(title=title, now=ev, fix=fix, copy=None, copy_kind='memory', needs_review=True, topic=topic,
+                        score=dict(impact=impact_from(g['incidents']), confidence=conf, effort=1, reversibility=1.0,
+                                   basis=f"{g['incidents']} incidents on {len(g['days'])} days"))
+            if g.get('fix_candidates_between') or g.get('fix_candidates_after_last'):
+                # unverified: the host bot decides whether any of these is about this problem (references/writing.md)
+                item['fix_check'] = dict(between=g.get('fix_candidates_between', []), after_last=g.get('fix_candidates_after_last', []))
+            findings.append(item)
         for r in b['repeated_requests'][:1]:
             if len(r['days']) >= 3:
                 findings.append(dict(title='You ask for the same thing by hand on many days',
@@ -95,12 +96,18 @@ def skeleton(a):
             findings.append(dict(title='The description is empty', now=[], fix='See the shared description item.',
                                  see='fleet-1'))
         why = {'red': 'Barely used for most of its life, and a very small part of your overall use.',
-               'yellow': 'The same correction keeps coming back.',
+               'yellow': 'The same correction keeps coming back.' if any(g['strong'] for g in b['groups'].values())
+                         else 'Some requests went unanswered.',
                'green': 'No repeated problem.'}[b['status_suggested']]
         if b['status_suggested'] == 'red':
             findings = [dict(title='Barely used', now=[dict(date='', text=f"Last request {(b['last_request'] or '')[5:10]}")],
-                             fix='Consider merging it into another bot or removing it. Check its routines in the app first; nothing is deleted automatically.',
+                             fix='Consider cleaning it up, or moving its job to a bot you use. How: see the keep / clean-up item.',
                              needs_review=True, score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='idle; small share'))] + findings
+        own = [w for w in b['waits'] if not w['fleet_outage'] and w['texts']]
+        if own:   # unanswered requests: information, not a scored proposal
+            findings.append(dict(title='Some requests went unanswered', info=True, needs_review=True,
+                                 now=[dict(date=w['first'][5:10].replace('-', '/'), quote={'orig': w['texts'][0]}) for w in own[:3]],
+                                 fix='It went quiet for hours after these messages. Check whether it was busy or stuck.'))
         bots.append(dict(id=bid, name=b['name'], status=b['status_suggested'], issue='TODO short issue', why=why,
                          improving=improving, findings=findings, needs_review=True))
     if empty:
@@ -132,7 +139,7 @@ def skeleton(a):
             leads['skipped_questions'][bid] = dict(count=b['skipped_questions']['count'], questions=b['skipped_questions']['questions'])
         leads['preferences'] += [norm(txt(k))[:120] for k in b['preferences'] if k in jin]
     from make_report import UI_DEFAULT
-    draft = dict(schema=3, lang=lang, title='Bot audit report', date=diag['now'][:10], date_label=diag['now'][:10],
+    draft = dict(schema=3, lang=lang, title='Bot audit report', date=diag['now'][:10], date_label='TODO ' + diag['now'][:10],
                  ui=dict(UI_DEFAULT), bots=bots, fleet=fleet, leads=leads)
     dump_json(draft, os.path.join(a.work, 'findings_draft.json'))
     n = sum(len(b['findings']) for b in bots)
@@ -150,6 +157,7 @@ def finalize(a):
     diag = load_json(os.path.join(a.work, 'diag.json'), {'bots': {}})
     text = corpus(a.work, diag)
     errors, warns = [], []
+    if 'TODO' in str(draft.get('date_label', '')): warns.append('date_label still has TODO (write the date as the reader writes it)')
     for b in draft['bots']:
         if b.get('status') not in ('green', 'yellow', 'red'):
             errors.append(f"{b.get('name')}: status must be green|yellow|red")
@@ -162,6 +170,7 @@ def finalize(a):
         ti = f.get('title'); ti = next(iter(ti.values()), '') if isinstance(ti, dict) else ti
         where = (b['name'] if b else 'fleet') + ' / ' + str(ti)
         if f.get('needs_review'): warns.append(where + ': needs review')
+        if 'fix_check' in f: warns.append(where + ': fix_check not resolved (confirm or drop the fix, then delete fix_check)')
         c = f.get('copy')
         if isinstance(c, list) and not all(isinstance(x, dict) and x.get('bot') and x.get('text') for x in c):
             errors.append(where + ': "copy" as a list needs {"bot", "text"} in every item')

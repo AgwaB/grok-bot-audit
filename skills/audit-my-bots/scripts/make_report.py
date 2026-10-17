@@ -27,7 +27,7 @@ UI_DEFAULT = {
     'when': 'Checked {date}', 'glance': 'At a glance', 'th': ['Bot', 'Status', 'Current issue', 'Proposals'],
     'n_items': '{n}', 'n_see': '+ shared item', 'top': 'Do these 3 first', 'topref': '{bot}, item {n}', 'bybot': 'Bot by bot', 'fleet': 'Across all bots',
     'fleet_h': 'All bots', 'fleet_iss': 'Overlaps, outages, clean-up candidates',
-    'fleet_note': 'Nothing is deleted automatically. Before removing a bot, check in the app whether any routine uses it.',
+    'fleet_note': '',
     'fix': 'Fix', 'apply': 'Apply', 'copy': 'Copy', 'copied': 'Copied',
     'kind': {'description': 'Text for the description', 'memory': 'Text for memory', 'routine': 'Text for a new routine', 'other': 'Text to add'},
     'src': {'memory': 'Memory', 'description': 'Description'},
@@ -310,10 +310,10 @@ def body(d, print_mode=False):
 <header><h1>{E(T(d['title']).split(' (')[0])}</h1><p class="when">{E(t['when'].format(date=(d.get('date_label') or d['date'])))}</p><p class="lede">{E(lede)}</p></header>
 <h2>{E(t['glance'])}</h2>
 <table class="st"><thead><tr><th>{E(th[0])}</th><th>{E(th[1])}</th><th>{E(th[2])}</th><th style="text-align:right">{E(th[3])}</th></tr></thead><tbody>{rows}</tbody></table>
-<h2>{E(t['top'])}</h2><ol class="top">{top}</ol>
+{f'<h2>{E(t["top"])}</h2><ol class="top">{top}</ol>' if top else ''}
 <h2>{E(t['bybot'])}</h2>{''.join(secs)}
 <h2>{E(t['fleet'])}</h2>
-<p class="note">{E(t['fleet_note'])}</p>
+{f'<p class="note">{E(t["fleet_note"])}</p>' if t.get('fleet_note') else ''}
 <details class="bot" id="bot-fleet" open><summary><h3>{E(t['fleet_h'])}</h3><span class="stt"></span><span class="iss">{E(t['fleet_iss'])}</span>
 <span class="tog"><span class="o">{E(t['collapse'])}</span><span class="c">{E(t['expand'].format(n=len(d.get('fleet', []))))}</span></span></summary>{fleet}</details>
 <footer>{E(t['footer'].format(date=(d.get('date_label') or d['date'])))}</footer>

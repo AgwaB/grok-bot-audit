@@ -22,5 +22,10 @@
 - App attachment notices and file paths are stripped from chats before any check and can never be quoted.
 - Evidence may quote a memory fact or a bot description (`source`); a shared fix can carry per-bot paste text
   (`copy` as a list); the Proposals column counts real proposals only.
+- Memory saves after a repeated problem are only fix candidates (`fix_check`): the bot confirms or drops them, and
+  they change neither status nor impact until then.
+- Judging: mode chosen per bot by its chats' language; question cards and the starting request in each item; a compact
+  `--list` view and TSV labels (`--label`); a bot with no cue match gets all its replies judged.
+- Writing guide (`references/writing.md`); an all-Fine report hides the empty top-3 section; no duplicated fleet note.
 - Offline end-to-end and regression tests on synthetic fixtures, and a skill eval kit: replay mode
   (`sessions.py replay`), scenarios and an objective grader (`tests/EVAL.md`).

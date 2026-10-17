@@ -16,6 +16,7 @@ FMT = '%Y-%m-%d %H:%M'
 P = lambda s: dt.datetime.strptime(s, FMT)
 INCIDENT_MIN = 60
 WAIT_H = 6
+FIX_MAX = 6
 
 def days_between(a, b):
     return (b - a).total_seconds() / 86400
@@ -71,12 +72,12 @@ def main():
             g['days'] = sorted(d for d in g['days'] if d)
             g['rate'] = round(g['incidents'] / n_real, 3)
             g['repeated'] = (g['incidents'] >= 2 and len(g['days']) >= 2) or g['incidents'] >= 3
-            g['fixes_between'] = [f for f in fixes if g['first'] and g['last'] and g['first'] < f['ts'] < g['last']][:5]
-            g['fixes_after_last'] = [f for f in fixes if g['last'] and f['ts'] >= g['last']][:5]
-            g['recurred_after_fix'] = bool(g['fixes_between'])
-            g['strong'] = g['repeated'] and (g['incidents'] >= 3 or g['rate'] >= 0.05 or g['recurred_after_fix']) \
-                and any(c != 'low' for c in g['confidences'])
-            g['possibly_fixed'] = bool(g['fixes_after_last'])   # the host bot confirms the fix matches the topic
+            # Fix candidates: memory saves and announced fixes in the same bot after the group's first incident.
+            # Whether one is about this group's problem can't be told from words (memory and chats may be in different
+            # languages), so they are candidates only: they change neither status nor impact until the host bot confirms.
+            g['fix_candidates_between'] = [f for f in fixes if g['first'] and g['last'] and g['first'] <= f['ts'] < g['last']][-FIX_MAX:]
+            g['fix_candidates_after_last'] = [f for f in fixes if g['last'] and f['ts'] >= g['last']][:FIX_MAX]
+            g['strong'] = g['repeated'] and (g['incidents'] >= 3 or g['rate'] >= 0.05) and any(c != 'low' for c in g['confidences'])
         prefs = [k for k, v in labels.items() if k.startswith(bid + ':') and v.get('type') == 'preference']
         # ---- waits: user message(s) with no bot reply for >= WAIT_H hours (lower bound from the next timestamp)
         waits = []; k = 0; seq = [e for e in ev if e['role'] in ('user', 'bot')]
@@ -179,7 +180,7 @@ def main():
         if b['age_days'] >= 3 and b['idle_days'] >= max(3, b['age_days'] / 2) and b['share'] < 0.05:
             st = 'red'; reasons.append('barely used: idle {idle_days} of {age_days} days, under 5% of use'.format(**b))
         else:
-            strong = [t for t, g in b['groups'].items() if g['strong'] and not g['possibly_fixed']]
+            strong = [t for t, g in b['groups'].items() if g['strong']]
             own_waits = [w for w in b['waits'] if not w['fleet_outage']]
             if strong: reasons.append('repeated corrections not fixed: ' + ', '.join(strong))
             if own_waits: reasons.append(f'{len(own_waits)} unanswered request(s) not explained by a fleet outage')

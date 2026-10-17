@@ -56,7 +56,8 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   "short": "Recipe Helper: steps only",   // optional short line for the top 3
   "see": "fleet-1",          // optional: this bot's evidence for a shared fleet item (no Apply box, no score)
   "info": true,              // optional: information only (no Apply box, no score)
-  "needs_review": true       // set by skeleton; remove after you rewrite the text
+  "needs_review": true,      // set by skeleton; remove after you rewrite the text
+  "fix_check": {"between": [], "after_last": []}   // set by skeleton: unverified fix candidates; resolve, then delete
 }
 ```
 
@@ -84,6 +85,8 @@ table headers (`th`, a list of 4), status names (`st`), copy-box labels (`kind`)
 - Every `quote.orig` must appear word for word (whitespace aside) in its `source`: the saved chats, the memory, or a bot's
   name or description. No file paths or app notices.
 - `copy` is a string or a list of `{"bot", "text"}`.
+- With `--strict`: no `fix_check` left, and `date_label` has no `TODO`.
+- `leads` may stay in the draft; finalize removes it from `findings.json`.
   Use "…" to skip words inside a quote; each piece is checked on its own.
 - With `--strict`, no `needs_review` flags or `TODO` text may remain.
 - Scores become `value`; at most 3 scored findings per bot stay in `findings`, and the rest move to `more`. `top3` is chosen by value

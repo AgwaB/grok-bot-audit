@@ -28,6 +28,7 @@ try:
                for x in json.load(open(f'{W}/judge_inputs.json'))}, open(f'{W}/labels.json', 'w'))
     run(f'{S}/diagnostics.py', '--work', W); run(f'{S}/build_findings.py', 'skeleton', '--work', W)
     d = json.load(open(f'{W}/findings_draft.json'))
+    d['date_label'] = 'March 4, 2030'
     for b in d['bots']: b['issue'] = 'Working well'; b.pop('needs_review', None)
     for f in d['fleet']: f.pop('needs_review', None)
     json.dump(d, open(f'{W}/findings_draft.json', 'w'))

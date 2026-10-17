@@ -11,7 +11,7 @@
       Several files (one bot or several) can be saved in one call.
   python3 sessions.py parse --work W
       W/transcripts/<id>/page_*.txt -> W/timelines/<id>.json (events, memory block, coverage).
-  python3 sessions.py replay --work W [--from DIR]
+  python3 sessions.py replay --work W [--from DIR] [--self AGENT_ID]
       Testing only (tests/EVAL.md): instead of steps 1-2, copy DIR/bots.json and DIR/transcripts/<id>/page_*.txt
       (pre-saved pages) into W, plus DIR/replay.json ({"now": "YYYY-MM-DD HH:MM"}) if present. DIR defaults to
       $AUDIT_REPLAY_DIR.
@@ -62,17 +62,20 @@ def replay(a):
     if not src or not os.path.isfile(os.path.join(src, 'bots.json')):
         sys.exit('replay: give --from DIR or set AUDIT_REPLAY_DIR (a folder with bots.json and transcripts/<id>/page_*.txt)')
     os.makedirs(a.work, exist_ok=True)
-    shutil.copyfile(os.path.join(src, 'bots.json'), os.path.join(a.work, 'bots.json'))
+    bots = [b for b in load_json(os.path.join(src, 'bots.json'), []) if b['id'] != a.self]
+    dump_json(bots, os.path.join(a.work, 'bots.json'))
     if os.path.isfile(os.path.join(src, 'replay.json')):
         shutil.copyfile(os.path.join(src, 'replay.json'), os.path.join(a.work, 'replay.json'))
     n = 0
+    ids = {b['id'] for b in bots}
     for p in glob.glob(os.path.join(src, 'transcripts', '*', 'page_*.txt')):
+        if os.path.basename(os.path.dirname(p)) not in ids: continue
         d = os.path.join(a.work, 'transcripts', os.path.basename(os.path.dirname(p)))
         os.makedirs(d, exist_ok=True); shutil.copyfile(p, os.path.join(d, os.path.basename(p))); n += 1
-    bots = load_json(os.path.join(a.work, 'bots.json'), [])
+    print(f'replay: {len(bots)} bots, {n} saved pages from {src} -> {a.work}. Every listed bot is audited. '
+          f'Next: sessions.py parse.')
     for b in bots:
         print(f"{b['id']}\t{b['name']}")
-    print(f'replay: {len(bots)} bots, {n} saved pages from {src} -> {a.work}. Skip step 2; go on with sessions.py parse.')
 
 def bot_text(name, inp):
     if name == 'CallDynamicTool' and inp.get('toolName') == 'SendToUser':
@@ -111,7 +114,7 @@ def parse_one(d):
                     events.append(ev)
                 elif k == 'skipped_question':
                     q = re.search(r'without responding \((.*?)\)\. Treat', t, re.S)
-                    events.append(dict(role='app', kind='skipped_question', ts=ts or last_ts, text=norm(q.group(1)) if q else ''))
+                    events.append(dict(role='app', kind='skipped_question', ts=ts or last_ts, text=norm(q.group(1)).strip('"') if q else ''))
                 elif k in ('routine', 'agent', 'background_result', 'form_submit'):
                     events.append(dict(role='app', kind=k, ts=ts or last_ts, text=''))
             elif role == 'assistant' and ty == 'tool_use':
@@ -156,7 +159,7 @@ def main():
     p = sp.add_parser('save-page'); p.add_argument('files', nargs='+'); p.add_argument('--work', required=True)
     p.add_argument('--bot'); p.set_defaults(fn=save_page)
     p = sp.add_parser('parse'); p.add_argument('--work', required=True); p.set_defaults(fn=parse)
-    p = sp.add_parser('replay'); p.add_argument('--work', required=True); p.add_argument('--from', dest='src')
+    p = sp.add_parser('replay'); p.add_argument('--work', required=True); p.add_argument('--from', dest='src'); p.add_argument('--self')
     p.set_defaults(fn=replay)
     a = ap.parse_args(); a.fn(a)
 
