@@ -125,12 +125,18 @@ def skeleton(a):
                                                 basis=f"similar request on {len(r['days'])} days")))
         if b['description_empty'] and b['status_suggested'] != 'red':
             empty.append(bid)
-            findings.append(dict(title='The description is empty', now=[], fix='See the shared description item.',
+            findings.append(dict(title='No saved job description', now=[], fix='See the shared job-text item.',
                                  see='fleet-1'))
         why = {'red': 'Barely used for most of its life, and a very small part of your overall use.',
                'yellow': 'The same correction keeps coming back.' if any(g['strong'] for g in b['groups'].values())
                          else 'Some requests went unanswered.',
                'green': 'No repeated problem.'}[b['status_suggested']]
+        if b['status_suggested'] == 'green' and b.get('too_new'):
+            why = f"Too new to judge: first used {md(b['first_seen'])}."
+        elif b['status_suggested'] == 'green' and b.get('routine_active') and b['idle_typed_days'] >= max(3, b['age_days'] / 2):
+            why = f"You rarely type to it, but its routine still runs (last run {md(b['last_routine_run'])})."
+        elif b['status_suggested'] == 'green' and b.get('within_rhythm') and b['idle_days'] >= max(3, b['age_days'] / 2):
+            why = f"Quiet lately, but that fits how often you use it (about every {b['typical_gap_days']} days)." 
         if b['status_suggested'] == 'red':
             findings = [dict(title='Barely used', cleanup=True, short=f"Show me how to clean up {b['name']}", now=[dict(date='', text=f"Last request {md(b['last_request'])}")],
                              fix='Consider cleaning it up, or moving its job to a bot you use. How: see the keep / clean-up item.',
@@ -140,15 +146,16 @@ def skeleton(a):
             findings.append(dict(title='Some requests went unanswered', info=True, needs_review=True,
                                  now=[dict(date=md(w['first']), quote={'orig': pick_quote(w['texts'][0])}) for w in own[:3]],
                                  fix='It went quiet for hours after these messages. Check whether it was busy or stuck.'))
-        bots.append(dict(id=bid, name=b['name'], status=b['status_suggested'], issue='TODO short issue', why=why,
+        bots.append(dict(id=bid, name=b['name'], status=b['status_suggested'], issue='TODO short issue', why=why.strip(),
                          improving=improving, findings=findings, needs_review=True,
                          **({'fix_candidates': b['fix_candidates']} if b.get('fix_candidates') and any('fix_check' in f for f in findings) else {})))
     if empty:
-        fleet.append(dict(title=f'Bots with no description: {len(empty)}',
+        # Personal bots may have no description field: the text goes to each bot as a message asking it to remember.
+        fleet.append(dict(title=f'Bots with no saved job description: {len(empty)}', kind='job_text',
                           now=[dict(date='', text=', '.join(diag['bots'][x]['name'] for x in empty))],
-                          fix='Paste a short description into each bot, written from how you actually use it.',
-                          copy=[dict(bot=diag['bots'][x]['name'], text='TODO description') for x in empty],
-                          copy_kind='description', needs_review=True,
+                          fix='Send each bot a short message saying what its job is and asking it to remember it.',
+                          copy=[dict(bot=diag['bots'][x]['name'], text='TODO job text') for x in empty],
+                          copy_kind='memory', needs_review=True,
                           score=dict(impact=impact_from(0, bots=len(empty)), confidence='medium', effort=1, reversibility=1.0, basis=f'{len(empty)} bots')))
     for o in diag['fleet']['outages']:
         fleet.append(dict(title='Several bots stopped answering at the same time',
@@ -162,6 +169,7 @@ def skeleton(a):
                           ([dict(date='', text='Clean-up candidates: ' + ', '.join(drop))] if drop else []),
                       fix=('Nothing is deleted automatically. Check in the app that a bot has no routines; then you can delete it yourself '
                            '(right-click the bot in the sidebar and choose Delete).') if drop else 'Nothing to clean up.', info=True))
+    fleet += setup_items(diag)
     leads = dict(preferences=[], memory={}, promises={}, skipped_questions={}, similar_requests=diag['fleet']['similar_requests_candidates'][:10],
                  other_bots_job=diag['fleet']['other_bots_job_candidates'][:10])
     for bid, b in diag['bots'].items():
@@ -178,6 +186,53 @@ def skeleton(a):
     dump_json(draft, os.path.join(a.work, 'findings_draft.json'))
     n = sum(len(b['findings']) for b in bots)
     print(f'draft: {len(bots)} bots, {n} bot findings, {len(fleet)} fleet items -> {os.path.join(a.work, "findings_draft.json")}')
+
+SETUP_KINDS = ('group', 'redundant_groups', 'connector', 'safety_rules', 'routine_cost')
+
+def setup_items(diag):
+    """Setup proposals (references/setup.md), after the keep item; the report shows them in their own section.
+    Each comes only from evidence in the chats; English placeholders, the host bot writes the words."""
+    out, B = [], diag['bots']
+    for g in diag['fleet'].get('group_candidates', []):
+        days = sorted({d for h in g['handoffs'] for d in h['days']})
+        out.append(dict(kind='group', title='You pass work between ' + ', '.join(g['bots_names']) + ' by hand',
+                        now=[dict(date='', text=f"{h['src_name']} -> {h['to_name']}: pasted on {', '.join(md(d) for d in h['days'])}")
+                             for h in g['handoffs']],
+                        group=dict(bots=g['bots_names'], lead=g['lead_name']),
+                        fix=f"A group chat with these bots could pass the work along, with {g['lead_name']} starting each round. TODO steps (setup.md)",
+                        copy='TODO first message for the group: who does what, who owns the next step', copy_kind='group', needs_review=True,
+                        short='TODO short line', score=dict(impact=impact_from(0, days=len(days), bots=len(g['bots'])), confidence='medium',
+                                                            effort=2, reversibility=1.0, basis=f"{sum(h['count'] for h in g['handoffs'])} pasted hand-offs on {len(days)} days")))
+    for r in diag['fleet'].get('redundant_groups', []):
+        out.append(dict(kind='redundant_groups', title='Two group chats with the same bots: ' + ' / '.join(r['groups']),
+                        now=[dict(date='', text=f"{gname}: {', '.join(r['bots'])}; last used {md(r['last'][gname])}") for gname in r['groups']],
+                        fix='TODO how to keep one group for this work (setup.md)', needs_review=True, short='TODO short line',
+                        score=dict(impact=1, confidence='medium', effort=1, reversibility=0.8, basis='same members')))
+    for bid, b in B.items():
+        if b['status_suggested'] == 'red': continue   # no setup advice for a bot suggested for clean-up
+        for c in b.get('connector_candidates', []):
+            out.append(dict(kind='connector', bot=b['name'], title=f"{b['name']} works {c['service']} through the browser",
+                            now=[dict(date='', text=f"Browser on {c['service']}: {', '.join(md(d) for d in c['days'][:6])}")],
+                            fix=f"Connect the {c['service']} plugin (Connect apps in the sidebar); it is steadier than clicking through the site.",
+                            needs_review=True, short='TODO short line',
+                            score=dict(impact=impact_from(0, days=len(c['days'])), confidence='medium', effort=1, reversibility=1.0,
+                                       basis=f"browser on {c['service']} on {len(c['days'])} days")))
+        if b.get('memory_safety_rules'):
+            out.append(dict(kind='safety_rules', bot=b['name'], title=f"A safety rule for {b['name']} lives only in its memory",
+                            now=[dict(date=md(r['date']), source='memory', quote={'orig': r['text']}) for r in b['memory_safety_rules'][:3]],
+                            fix='Keep it, and also add it as an Auto-review rule (Settings > General > Auto-review rules).',
+                            copy='TODO the rule, worded for Auto-review', copy_kind='other', needs_review=True, short='TODO short line',
+                            score=dict(impact=1, confidence='medium', effort=1, reversibility=1.0, basis='safety boundary only in memory')))
+        rc = b.get('routine_cost')
+        if rc:
+            out.append(dict(kind='routine_cost', bot=b['name'], title=f"A routine of {b['name']} runs very often",
+                            now=[dict(date='', text=f"About every {rc['median_gap_min']} minutes ({rc['runs_per_day']} runs a day); "
+                                                    f"{round(100 * rc['unchanged_or_silent'])}% of runs said nothing new")],
+                            fix='Ask it to run less often, end quietly when nothing changed, and stop once the job is done.',
+                            copy='TODO edit text for the routine', copy_kind='routine', needs_review=True, short='TODO short line',
+                            score=dict(impact=2 if rc['runs_per_day'] >= 24 else 1, confidence='high', effort=1, reversibility=1.0,
+                                       basis=f"{rc['runs']} runs, median gap {rc['median_gap_min']} min")))
+    return out
 
 VISIBLE = ('title', 'fix', 'short', 'issue', 'why', 'text', 'after', 'gloss')
 

@@ -56,10 +56,10 @@ the fonts of the machine that made it.
 | `skills/audit-my-bots/SKILL.md` | the end-to-end procedure the bot follows, including the safety rules |
 | `skills/audit-my-bots/scripts/sessions.py` | list bots (name and description only), save transcript pages, build per-bot timelines |
 | `skills/audit-my-bots/scripts/judge_inputs.py` | wide filter for messages that might be corrections; exports items for the rubric |
-| `skills/audit-my-bots/scripts/diagnostics.py` | usage, correction groups, suggested status, outages, memory, repeated requests, overlap leads |
+| `skills/audit-my-bots/scripts/diagnostics.py` | usage (typed requests and routine runs), correction groups, suggested status, outages, memory, repeated requests, overlap leads, setup checks (group chats, plugins, safety rules in memory, routine frequency) |
 | `skills/audit-my-bots/scripts/build_findings.py` | `skeleton`: a draft findings file with verbatim evidence; `finalize`: checks quotes word for word, scores, caps 3 per bot, picks the top 3 |
-| `skills/audit-my-bots/scripts/make_report.py` | renders the HTML and PDF (headless Chrome, temporary profile) |
-| `skills/audit-my-bots/references/` | correction rubric, criteria, findings schema, language cues, design notes |
+| `skills/audit-my-bots/scripts/make_report.py` | renders the HTML and PDF (headless Chrome, temporary profile); `summary.json` and `--previous` for the weekly re-check |
+| `skills/audit-my-bots/references/` | correction rubric, criteria, findings schema, language cues, setup checks, design notes |
 | `assets/` | plugin logo |
 | `tests/` | synthetic fixture (fake bots, fake chats), offline tests, and the skill eval kit (`EVAL.md`, `grade.py`) |
 
@@ -67,7 +67,7 @@ the fonts of the machine that made it.
 - Read-only on bot data. Only `profile.json` (name and description) and the history the bot fetches are read.
 - Secret and key files, settings, app databases and search indexes are never opened.
 - Quotes must match the chats word for word, or `finalize` fails. Numbers come only from the scripts.
-- Work files go to `/workspace/bot-audit-run/<date>/` on the bot's own machine.
+- Work files go to a new private folder per run, `/workspace/bot-audit-run/<date-time>-<random>/`, so bots sharing one computer never mix runs.
 
 ## Test
 ```bash

@@ -8,8 +8,9 @@ r"""Bot Audit, step 3: pick user messages that might be corrections, export judg
       Without --all, a bot's replies are filtered by cue phrases (minimal English fallback + W/cues.json). --all exports
       every reply after a bot message for all bots; --all-for does it for the named bots (id or name) only. A bot whose
       replies match no cue at all gets all its replies exported anyway. --auto picks per bot: every reply unless at
-      least 8 in 10 of the bot's typed user messages are written mostly in Latin letters (the only messages the
-      built-in English cues can match). Each bot's line prints that share and the recommended mode.
+      least 8 in 10 of the bot's typed user messages are written mostly in Latin letters (code, identifiers and links
+      removed first) and at most 1 in 10 has accented letters (the only messages the built-in English cues can
+      match). Each bot's line prints those shares and the recommended mode.
   python3 judge_inputs.py --work W --list [--from N] [--to M | --kb K] [--short | --width N]
       Compact view: one block per item with short excerpts, numbered. A bot message already shown as the previous
       item's "next>" is not repeated. --short cuts bot text to 100 characters (user text stays at 400); --width N sets
@@ -43,15 +44,32 @@ PREV_N, USER_N, NEXT_N, REQ_N = 800, 1000, 900, 300
 TYPES = ('correction', 'topic_rejection', 'new_request', 'question', 'clarification', 'preference', 'other', 'none')
 EMPTY = ('', '\\N', '-')
 
+CODE_RE = re.compile(r'```.*?```|`[^`\n]*`', re.S)
+# identifiers, commands and addresses: tokens with digits, or _ . / ( ) = : @ # between letters, or camelCase. They are written in
+# Latin letters whatever language the user speaks, so they say nothing about the chat's language.
+TOKEN_RE = re.compile(r'https?://\S+|\S*\w[_./()=\\:@#]+\w\S*|\S*\w\(\)\S*|\S*\d\S*|\b[a-z]+[A-Z]\w*')
+
+def prose(t):
+    """The message without code spans, identifiers, commands and links."""
+    return TOKEN_RE.sub(' ', CODE_RE.sub(' ', t or ''))
+
+def accented(c):
+    return '\u00c0' <= c <= '\u024f' and c not in '\u00d7\u00f7'
+
 def latin_share(texts):
-    """Share of messages written mostly in Latin letters (a script measure, not a language rule)."""
-    n = hit = 0
+    """(messages mostly in plain Latin letters, messages with letters, messages with accented Latin letters).
+    A script measure, not a language rule: code, identifiers and links are removed first, so a message in another
+    script that is full of code still counts as that script. "Mostly Latin": 8 in 10 letters, and at most 2 letters
+    of another script (a message mixing scripts is not one the English cues can read)."""
+    n = hit = acc = 0
     for t in texts:
-        letters = [c for c in t if c.isalpha()]
+        letters = [c for c in prose(t) if c.isalpha()]
         if not letters: continue
         n += 1
-        hit += sum(1 for c in letters if c.isascii() or '\u00c0' <= c <= '\u024f') / len(letters) >= 0.5
-    return hit, n
+        lat = sum(1 for c in letters if c.isascii() or accented(c))
+        hit += lat / len(letters) >= 0.8 and len(letters) - lat < 3   # a few words in another script make it mixed
+        acc += any(accented(c) for c in letters)
+    return hit, n, acc
 
 def ex(t, n, head=0.5):
     """Excerpt: the whole text if short, else its start and its end joined by ' … '."""
@@ -158,7 +176,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--work', required=True)
     ap.add_argument('--all', action='store_true', help='export every reply after a bot message (no cue filter)')
-    ap.add_argument('--auto', action='store_true', help='per bot: every reply unless 8 in 10 user messages are mostly Latin script')
+    ap.add_argument('--auto', action='store_true', help='per bot: every reply unless 8 in 10 user messages are mostly plain Latin script')
     ap.add_argument('--all-for', nargs='+', metavar='BOT', default=[], help='like --all, for these bots (id or name)')
     ap.add_argument('--show', nargs='+', metavar='N'); ap.add_argument('--list', action='store_true')
     ap.add_argument('--from', dest='lo', type=int, default=1); ap.add_argument('--to', dest='hi', type=int, default=10 ** 9)
@@ -172,12 +190,16 @@ def main():
         return listing(a.work, a.lo, a.hi, 100 if a.short else a.width, kb)
     if a.label: return label(a.work, a.label)
     cues, _ = load_cues(a.work); DIRECTIVE = cues['directive']
-    out, per = [], []
+    out, per, not_plain = [], [], []
     for p in sorted(glob.glob(os.path.join(a.work, 'timelines', '*.json'))):
         tl = load_json(p)
-        hit, n_typed = latin_share([e['text'] for e in tl['events'] if e['role'] == 'user' and norm(e['text'])])
+        hit, n_typed, acc = latin_share([e['text'] for e in tl['events'] if e['role'] == 'user' and norm(e['text'])])
         share = hit / n_typed if n_typed else 1.0
-        rec = 'cues' if share >= 0.8 else 'all'
+        acc_share = acc / n_typed if n_typed else 0.0
+        # The built-in cues are English. Latin-script chats in other languages (accented letters in more than 1 in
+        # 10 messages) get every reply too, like chats in other scripts.
+        rec = 'cues' if share >= 0.8 and acc_share <= 0.1 else 'all'
+        if rec == 'all': not_plain.append(tl['name'])
         every = a.all or tl['id'] in a.all_for or tl['name'] in a.all_for or (a.auto and rec == 'all')
         rows = []
         for e, prev, cards, nxt, req in pairs(tl):
@@ -196,7 +218,8 @@ def main():
                             prev_bot=ex(prev['text'], PREV_N, 0.35) + card_text(cards), user=ex(e['text'], USER_N, 0.7),
                             next_bot=ex('\n'.join(nxt), NEXT_N, 0.4) if nxt else '', signal=sig or '(all replies)',
                             **({'pasted': True} if pasted else {})))
-        why = f"{round(100 * share)}% of its user messages ({hit}/{n_typed}) are mostly Latin letters"
+        why = (f"{round(100 * share)}% of its user messages ({hit}/{n_typed}) are mostly Latin letters (code and links aside)"
+               + (f", {round(100 * acc_share)}% have accented letters" if acc else ''))
         if a.auto and not (a.all or tl['id'] in a.all_for or tl['name'] in a.all_for):
             how = f"auto: {why}" + ('; no cue matched' if mode.startswith('all (no') else '')
         else:
@@ -204,6 +227,9 @@ def main():
         per.append(f"{tl['name']}: {len(cued) if mode == 'cues' else len(rows)} items, mode used: {mode.split(' ')[0]} ({how})")
     dump_json(out, os.path.join(a.work, 'judge_inputs.json'))
     print('\n'.join(per))
+    if not_plain and not load_cues(a.work)[1]:
+        print('note: the promise and stale-memory word checks are English; for other languages read the memory block and '
+              'promises yourself, or add words to cues.json (references/cues.md). Past dates and long silences are checked in any language.')
     print(f'{len(out)} candidates -> {os.path.join(a.work, "judge_inputs.json")}' + ('' if out else '  (none: labels.json is {})'))
 
 if __name__ == '__main__':

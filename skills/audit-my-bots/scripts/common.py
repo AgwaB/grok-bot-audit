@@ -140,7 +140,7 @@ def dump_json(obj, p):
         json.dump(obj, fh, ensure_ascii=False, indent=1)
 
 # ---------- cue phrases ----------
-# A minimal English fallback so the pipeline runs without input. For chats not mostly in English the host bot
+# A minimal English fallback so the pipeline runs without input; nothing here is a rule for one language. For chats not mostly in English the host bot
 # judges every reply itself (judge_inputs.py --all) and may write W/cues.json with the same keys (added to these).
 # See references/cues.md.
 CUES_EN = {
@@ -154,7 +154,13 @@ CUES_EN = {
     'promise': [r"i'?ll (let you know|send|get back|report back|follow up)", r"working on it", r"give me a (moment|minute)", r"in progress"],
     'nudge': [r"^(hi|hello|hey)\b", r"^\?+$", r"^any update", r"^update\?", r"^status\?"],
     'timely': [r"\b(currently|now|at the moment|as of)\b"],
+    # a standing safety boundary (ask first, never do X without approval), checked in memory facts only
+    'safety': [r"\bnever (send|delete|post|buy|pay|share|publish)", r"\bwithout (asking|approval|permission|my ok)",
+               r"\bask (me )?(first|before)", r"\bconfirm before", r"\bdon'?t (send|delete|post|buy|pay|share) .*without"],
 }
+# Language-neutral checks run next to these lists, so chats in other languages are not left out: memory facts that
+# carry a past date, promises followed by a short check-in after a long silence, and the share of Latin letters
+# (with code, paths and accented letters handled) that picks the judge mode. See references/cues.md.
 
 def load_cues(work):
     """Compiled cue patterns: English plus W/cues.json (if the host bot wrote one). Returns (patterns, has_custom)."""

@@ -13,7 +13,8 @@ and the memory block the app shows the bot. No external APIs, no logins.
 - **Repeated correction**: same bot and topic, 2 or more incidents on 2 or more separate occasions. Incidents that all fall
   in one occasion (`one_session`) are never repeated on their own. Before proposing anything, apply the decision procedure
   in section 5.
-- **Strong repeated correction**: a repeated correction that also has 3+ incidents, or incidents in 5%+ of the bot's real requests.
+- **Strong repeated correction**: a repeated correction that also has 3+ incidents (and at least 1 incident per 100 real
+  requests, so a very busy bot isn't flagged for a handful of slips), or incidents in 5%+ of the bot's real requests.
   It needs at least one incident of medium or high confidence.
 - **Fix candidates**: memory saves, "from now on…" sentences the bot said **to the user** (not text inside a draft,
   quote or code it produced), and replies the judge marked as promising a lasting change. Listed once per bot
@@ -32,17 +33,22 @@ and the memory block the app shows the bot. No external APIs, no logins.
 - **Unanswered request**: a real request with no bot reply for 6 hours or more (a lower bound, taken from the next timestamp).
   A request that is the last message in the data is not counted: the bot may not have had time to answer.
   If several bots go quiet in the same window, it is a fleet outage (usually a plan limit), not a problem with one bot.
-- **Age** = now minus the first message. **Idle** = now minus the last real request. **Share** = the bot's real requests ÷ all real requests.
+- **Age** = now minus the first message. **Idle** = now minus the last use: a real request or a routine run (a bot
+  that works by routine is in use even if the user never types to it). **Share** = the bot's real requests ÷ all real requests.
+- **Rhythm** = the typical gap between the days the user typed to it (needs 2+ such days). **Within its rhythm**: idle ≤ 1.5 × that gap + 1 day.
+- **Too new to judge**: age under 14 days, and the bot started in the later half of the history covered (a bot added
+  recently to an older fleet). It gets no clean-up verdict; its other checks still run.
 
 ## 2. Status (first match wins)
 | status | rule |
 |---|---|
-| Clean up (`red`) | Age ≥ 3 days, idle ≥ max(3 days, half its age), and share < 5%. *Or* its whole job is already done by another bot that is in use, and its history shows no use of its own. |
+| Clean up (`red`) | Age ≥ 3 days, idle ≥ max(3 days, half its age), share < 5%, not within its rhythm, and not too new to judge. *Or* its whole job is already done by another bot that is in use, and its history shows no use of its own. |
 | Needs work (`yellow`) | A strong repeated correction with a shared cause that is not fixed; *or* unanswered requests caused by the bot itself (not a fleet outage); *or* a safety problem visible in its chats (for example, it printed another bot's internal settings). |
 | Fine (`green`) | Everything else. An empty description, a weak repeated correction, a stated preference or another lead (section 4) can still produce a proposal, but it doesn't change the status. A one-off correction never does: no rules from one mistake. |
 
 Why relative thresholds: a fleet may have only a few days of history, so fixed counts ("5 corrections a week") mean nothing yet.
-Share, half-of-age idle and per-request rates scale with however much history exists. A bot younger than 3 days can't be "Clean up" by the idle rule.
+Share, half-of-age idle and per-request rates scale with however much history exists. A bot younger than 3 days can't be "Clean up" by the idle rule,
+nor can a bot used on a slow but steady rhythm (monthly), one that is too new to judge, or one whose routine still runs.
 `diagnostics.py` suggests a status from these rules; you set the final one with the procedure in section 5.
 
 ## 3. Proposal scoring
@@ -51,7 +57,7 @@ to `scores.md` only and is never shown in the report), so it needs no translatio
 - **impact** (1–3): 3 = 4+ incidents, repeated work on 5+ days, or 3+ bots affected; 2 = 2–3 incidents, 3–4 days or 2 bots; 1 = less.
   Add 1 (max 3) if the problem came back after a fix you confirmed.
 - **confidence**: `high` 1.0 / `medium` 0.7 / `low` 0.4, from the rubric confidence of the incidents and whether the evidence is a direct quote.
-- **effort**: 1 = paste one text into a description or memory; 2 = set up a routine or merge bots; 3 = needs a new tool.
+- **effort**: 1 = send one text for a bot to remember, or change one setting; 2 = set up a routine, a group chat, or merge bots; 3 = needs a new tool.
 - **reversibility**: 1.0 for text or routine changes; 0.8 for merging bots; 0.6 for removing a bot (never done automatically).
 
 `value = impact × confidence × reversibility ÷ √effort`
@@ -71,7 +77,7 @@ Each check gives leads; keep a lead only after reading the actual messages.
 | Skipped question cards | the app reports that the user moved on without tapping a choice | mostly noise (the user often answers in text instead); a finding only when one bot asks several of the same kind of unneeded question (default impact 1) |
 | Promises without delivery | "I'll let you know…", then the user nudges ("hello?") | check by reading; often already delivered |
 | Memory facts | facts with "currently/now" older than 3 days; near-duplicates | a finding only if later chats contradict the fact or it has clearly expired (default impact 1; 2 if the bot acted on the stale fact); duplicates rarely matter |
-| Description vs. use | empty description, or a description that contradicts what the bot learned or what the user said later | real |
+| Description vs. use | no saved job description, or one that contradicts what the bot learned or what the user said later | real; the fix is text the user sends that bot to remember (personal bots may have no description field) |
 | Repeated work across days | similar requests on 3+ different days | routine candidate (score with effort 2) |
 | Same request in several bots | similar text across bots (attachment notices and file paths are stripped first) | noisy (shared links, the same post pasted to several bots); confirm by topic |
 | One bot doing another's job | a request closer to another bot's description than its own, counted only after that bot existed | noisy; keep only clear cases on 2+ days |
@@ -81,6 +87,10 @@ Each check gives leads; keep a lead only after reading the actual messages.
 
 Leads that are not corrections (skipped questions, stale memory, promises without delivery) can become scored findings
 with the default impact above, confidence from how clear the evidence is, and effort 1.
+Stale memory and promises are also found without words (a memory fact with a date that has passed; a very short
+"…?" after an hour of silence), so chats in any language get these leads.
+Setup checks (group chats, plugins instead of the browser, safety rules kept only in memory, routines that run very
+often) are in `setup.md`. They never change a bot's status.
 
 ## 5. Decision procedure (apply in this order; two runs on the same data should reach the same answer)
 1. **Shared cause.** For each repeated group, read every incident and write the one rule that would have prevented it.
@@ -89,22 +99,28 @@ with the default impact above, confidence from how clear the evidence is, and ef
      a format, a step, or the kinds of detail to confirm), so that someone reading it knows exactly when it applies;
    - the same rule would have prevented **every** incident (or all but one, when there are 4+);
    - it doesn't conflict with what the data shows: a "confirm/ask more" rule is never a shared cause for a bot whose
-     question cards the user often skips (the `skipped_questions` lead), because it would make that worse.
+     question cards the user often skips (the group's `confirm_conflict` is true), because it would make that worse.
 
    **The paste test decides specific vs generic.** Could the rule be pasted into any other bot unchanged and still make
    sense? Then it is generic and decides nothing: "confirm unclear requests in one line", "ask if ambiguous", "read the
    request carefully", "double-check before answering", "be more accurate". If the rule names the concrete fields or
    kinds of detail in this bot's domain (it would be nonsense in an unrelated bot), it is specific, even when each
    incident got a different one of those details wrong. A "confirm first" rule counts as soon as it lists what to
-   confirm: misreads of lodging type, meal and time of day are one shared cause, "before booking, confirm the lodging
-   type, the meal and the time of day". Don't drop a group because a generic rule would also cover it; look for the
-   specific one first.
+   confirm. Don't drop a group because a generic rule would also cover it; look for the specific one first.
+
+   **Same kind of action.** The incidents must come from the same kind of action in this bot's job (each time it
+   booked something, each time it drafted a post), and the details that went wrong must be details of that action.
+   Misreads spread over unrelated actions (a reminder set for the wrong hour one day, a letter to the wrong office the
+   next, a sheet sorted by the wrong column another day) are one-offs, even if a rule could list them all: a rule that
+   just strings together each incident's detail ("confirm the hour, the office and the column") is a list of past
+   mistakes, not a shared cause.
+   Read each incident's `request` (`judge_inputs.py --show <n>`) to see which action led to it.
 
    | counts (specific: names the fields or the check) | doesn't count (generic: fits any bot) |
    |---|---|
-   | "Before booking, confirm lodging type (hostel or hotel), meal and time of day." | "Confirm unclear requests first." |
-   | "Before booking, confirm hostel vs hotel and the price cap." | "Ask if the request is ambiguous." |
-   | "For logos, find the official file before drawing one." | "Be more careful with images." |
+   | "Before ordering prints, confirm paper size, number of copies and delivery date." | "Confirm unclear requests first." |
+   | "For plant questions, ask for the light level and pot size before advising." | "Ask if the request is ambiguous." |
+   | "Quote prices from the supplier's current list, never from memory." | "Be more accurate." |
 
    If no specific rule covers the incidents, there is no shared cause: drop the group (it can stay a lead).
    **Sub-part:** if a specific rule covers only some incidents, and those fall on 2+ separate occasions, keep that part

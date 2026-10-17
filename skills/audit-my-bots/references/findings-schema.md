@@ -21,40 +21,40 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   "bots": [
     {
       "id": "<agent id>",            // used for anchors and refs ("<id>-<n>")
-      "name": "Recipe Helper",       // the bot's name exactly as in its profile
-      "gloss": "recipes",            // optional short gloss when the name is in another language than the report
+      "name": "Garden Helper",       // the bot's name exactly as in its profile
+      "gloss": "garden",            // optional short gloss when the name is in another language than the report
       "status": "green|yellow|red",  // Fine | Needs work | Clean up (references/criteria.md §2)
-      "issue": "Answers run long",   // 2–6 words, shown in the status table
+      "issue": "Advice ignores the light",   // 2–6 words, shown in the status table
       "why": "The same correction keeps coming back.",   // one sentence: why this status
-      "improving": ["Tone: no complaints since it saved a rule on 03/02"],  // optional; fixed groups
+      "improving": ["Watering: no complaints since it saved a rule on 03/02"],  // optional; fixed groups
       "findings": [ /* Finding, at most 3 scored ones after finalize */ ],
       "more": [ /* Finding, filled by finalize from the overflow */ ]
     }
   ],
   "fleet": [ /* Finding: shared root causes, outage info, keep/clean-up summary */ ],
-  "top3": [{"text": "Recipe Helper: keep answers to the steps", "ref": "<id>-1"}]  // set by finalize
+  "top3": [{"text": "Garden Helper: ask about light first", "ref": "<id>-1"}]  // set by finalize
 }
 ```
 
 ## Finding
 ```jsonc
 {
-  "title": "Format and length fixes keep coming up",
+  "title": "It advises without knowing the light",
   "now": [                                   // evidence, oldest first
-    {"date": "03/01", "quote": {"orig": "Too long. Just give me the steps, no history"}},
-    {"date": "03/02", "quote": {"orig": "Demasiado largo, solo los pasos", "translation": "Too long, just the steps", "lang": "es"}},
-    {"date": "03/03", "who": "bot", "quote": {"orig": "From now on I will keep recipes short."}},
-    {"date": "02/20", "source": "memory", "quote": {"orig": "The user currently cooks for two people."}},
+    {"date": "03/01", "quote": {"orig": "That fern is in a dark hallway, I told you"}},
+    {"date": "03/02", "quote": {"orig": "Il n'y a presque pas de lumière ici", "translation": "There is almost no light here", "lang": "fr"}},
+    {"date": "03/03", "who": "bot", "quote": {"orig": "From now on I will ask about light first."}},
+    {"date": "02/20", "source": "memory", "quote": {"orig": "The user has a north-facing balcony."}},
     {"date": "", "text": "Last request 03/08"}   // plain fact, not a quote
   ],
-  "fix":  "Save the format you want as a default.",
-  "copy": "Recipes: list the steps only. No history or stories.",   // text the user pastes; optional
+  "fix":  "Pick this and a rule is saved to its memory.",
+  "copy": "Before advising on a plant, ask how much light it gets.",   // text for the bot; optional
   // or, when one item needs different text per bot (a shared fleet item):
-  // "copy": [{"bot": "Trip Planner", "text": "Plans trips…"}, {"bot": "Old Notes", "text": "Keeps notes…"}],
-  "copy_kind": "memory|description|routine",
+  // "copy": [{"bot": "Print Desk", "text": "Orders prints…"}, {"bot": "Bill Tracker", "text": "Tracks bills…"}],
+  "copy_kind": "memory|description|routine|group|other",   // memory: text the user sends that bot to remember
   "score": {"impact": 3, "confidence": "high", "effort": 1, "reversibility": 1.0, "basis": "3 incidents on 3 days"},
              // "basis" is an internal note for scores.md, never shown in the report; any language is fine
-  "short": "Recipe Helper: steps only",   // optional short line for the top 3
+  "short": "Garden Helper: ask about light",   // optional short line for the top 3
   "see": "fleet-1",          // optional: this bot's evidence for a shared fleet item (no Apply box, no score)
   "info": true,              // optional: information only (no Apply box, no score)
   "needs_review": true,      // set by skeleton; remove after you rewrite the text

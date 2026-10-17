@@ -6,11 +6,9 @@ description: Audit the user's Grok Bots from their own chat history and produce 
 # Audit my bots
 
 **Do this yourself, in this chat.**
-- Make every ReadTranscript call yourself. Never hand the fetching to a background helper: helpers can't read other bots'
-  chats.
+- Make every ReadTranscript call yourself; never hand fetching to a background helper (it can't read other bots' chats).
 - Never read `store.db`, `search-index.db` or any other app database or index file as a substitute for ReadTranscript.
-- If ReadTranscript isn't available to you, stop and tell the user that the audit can't run in this
-  bot, and that they can ask a bot that has it. Don't try another way.
+- No ReadTranscript? Stop: tell the user the audit can't run here, to ask a bot that has it. Don't try another way.
 - A background helper may be used, if at all, only for the later file-only steps (5 to 7), never for fetching or judging.
 
 The bundled scripts do the counting; you do the judging and the writing.
@@ -46,8 +44,8 @@ later command with `source <that printed path> &&`, the literal path (`$W` is no
 SKILL="${SKILL:-<folder that holds this SKILL.md>}"
 [ -f "$SKILL/scripts/sessions.py" ] || SKILL="$(dirname "$(dirname "$(find /home/box/agent-data/plugins ~/.cursor/plugins \
   -path '*/audit-my-bots/scripts/sessions.py' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)")")"
-W="${W:-/workspace/bot-audit-run/$(date +%F)}"; mkdir -p "$W"
-mkdir -p "$W/tmp"   # your own scratch files go here, not in $W
+mkdir -p /workspace/bot-audit-run   # one new private folder per run: other bots share this computer
+W="${W:-$(mktemp -d "/workspace/bot-audit-run/$(date +%F-%H%M%S)-XXXX")}"; mkdir -p "$W/tmp"   # scratch files: $W/tmp
 printf 'export SKILL=%q W=%q AUDIT_REPLAY_DIR=%q\n' "$SKILL" "$W" "${AUDIT_REPLAY_DIR:-}" > "$W/env.sh"; echo "$W/env.sh"
 ```
 Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts; nothing else to install.
@@ -88,9 +86,8 @@ messages are now in `$W/timelines/<id>.json` (`events`: role, ts, text), if you 
 python3 "$SKILL/scripts/judge_inputs.py" --work "$W" --auto
 ```
 `--auto` picks per bot: the built-in cue phrases are a small English list, so a bot gets every reply exported unless
-8 in 10 of its user messages are mostly in Latin letters. Each bot's line prints the mode used and why. If the
-total is over 400 items, you may instead write `$W/cues.json` for the user's language and rerun without `--auto`
-(`$SKILL/references/cues.md`). Attachment notices and file paths are already stripped.
+8 in 10 of its user messages are plain Latin letters (code and links aside, few accents). Each bot's line prints the
+mode and why. Over 400 items: you may write `$W/cues.json` and rerun without `--auto` (`$SKILL/references/cues.md`).
 
 ## 4. Judge every candidate
 Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. Work in batches:
@@ -101,8 +98,7 @@ Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. 
 3. `judge_inputs.py --work "$W" --label "$W/labels.tsv"`: it echoes each line with the item's user text. A refused line
    (`user_start` mismatch = off by one) must be fixed before the next batch.
 
-Candidates but no corrections or preferences: leave `labels.tsv` empty and still run `--label` (every item becomes
-`none`). No candidates at all: `labels.json` is `{}`.
+No corrections or preferences: leave `labels.tsv` empty and still run `--label`. No candidates: `labels.json` is `{}`.
 
 ## 5. Run the checks
 ```bash
@@ -111,7 +107,7 @@ python3 "$SKILL/scripts/build_findings.py" skeleton --work "$W" --lang "<BCP 47 
 ```
 
 ## 6. Write the findings
-Read `$SKILL/references/criteria.md`, `findings-schema.md` and `writing.md`, then edit `$W/findings_draft.json`:
+Read `$SKILL/references/criteria.md`, `findings-schema.md`, `writing.md` and `setup.md`, then edit `$W/findings_draft.json`:
 - **Groups and status:** follow the decision procedure in `criteria.md` §5 step by step (shared cause and its paste
   test, merging, normal iteration, status). Resolve each `fix_check` as `writing.md` says. Set `issue` and `why` for every bot.
 - **Words:** replace every placeholder and `TODO` (titles, fixes, `copy`, `issue`, `why`, `ui` labels, `date_label`) with
@@ -121,6 +117,7 @@ Read `$SKILL/references/criteria.md`, `findings-schema.md` and `writing.md`, the
 - **Leads:** check `leads` (stale memory, promises, skipped questions, the same request in several bots, other bots' jobs)
   and any safety event you saw in the chats. Add an item only for what you confirm by reading (`writing.md`).
 - **Shared causes:** one fleet item per cross-bot cause; each bot points to it with `"see": "fleet-N"`.
+- **Setup items** (`kind` group, connector, safety_rules, routine_cost…): confirm or delete each by reading (`setup.md`).
 - **Opening sentence:** rewrite the `ui.lede_*` key the final statuses will use (`writing.md`) before finalize.
 - **Review flags:** remove `needs_review`. Then:
 ```bash
@@ -147,7 +144,7 @@ Send one message:
 - The status table: 3 columns with the first three `ui.th` headers (bot, status, current issue), in report order.
 - With proposals: the top 3, one line each. With none: one line saying nothing needs doing.
 - If the user asked something specific (for example, which bots they don't need), answer it in one sentence.
-- Attach the PDF and the HTML. Details stay in the files.
+- With setup items (`setup.md`): one line naming them. Attach the PDF and the HTML; details stay in the files.
 
 ## 9. Offer to apply
 Skip to the weekly offer if there are no proposals. Otherwise ask one multi-select question, in the user's language:
@@ -159,7 +156,9 @@ Skip to the weekly offer if there are no proposals. Otherwise ask one multi-sele
 - Never label an option "Remove X", "Delete X" or "Merge X": you can't do those.
 
 Apply **only** what the user picks:
-- **Memory or description text for another bot:** give the exact text and say where it goes (that bot's settings, or a message to that bot). Use a tool that changes another bot only if you have one and the user picked that item.
+- **Text for another bot:** give the exact text as a message the user sends that bot, asking it to remember it (personal
+  bots may have no description field). Use a tool that changes another bot only if you have one and the user picked it.
+- **Setup items** (group chat, plugin, Auto-review rule, routine change): give the steps from `setup.md`.
 - **Your own memory:** save it.
 - **Routines:** create one only if the user picked it. Say what it will do and when (the user's real time zone).
 - **"Show me how to clean up X":** first ask the user to open X in the app and check whether any routine uses it; if one does,
@@ -169,4 +168,5 @@ Apply **only** what the user picks:
 
 After the picks are handled (or straight away with no proposals), ask once, as a separate short question, whether to
 re-run this audit every week: a yes/no choice (two options, "Yes, every Monday 9:00 <zone>" and "No"), in the user's
-language, with Monday 9:00 in the user's real time zone (step 0). Create the routine only if the user says yes.
+language, with Monday 9:00 in the user's real time zone (step 0). Create the routine only if the user says yes; its
+instruction follows `setup.md` (report only, no questions or changes, quiet when nothing changed, safe to re-run).

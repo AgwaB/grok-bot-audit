@@ -170,8 +170,8 @@ def main():
         check(any(f.get('info') and f['now'] and f['now'][0]['quote']['orig'] == 'Any mail from the bank?' for f in md['findings']),
               '11. an unanswered request (no fleet outage) is an info item')
         check(dr['date_label'].startswith('TODO'), '11. the skeleton leaves date_label for the bot to write')
-        fl = next(f for f in dr['fleet'] if f.get('copy_kind') == 'description')
-        check(isinstance(fl['copy'], list) and {x['bot'] for x in fl['copy']} == {NAMES[B], NAMES[C]}, '6. skeleton drafts per-bot copy for a shared description item')
+        fl = next(f for f in dr['fleet'] if f.get('kind') == 'job_text')
+        check(isinstance(fl['copy'], list) and {x['bot'] for x in fl['copy']} == {NAMES[B], NAMES[C]}, '6. skeleton drafts per-bot copy for a shared job-text item')
         # host bot edits
         json.dump(dr, open(f'{W}/findings_draft.json', 'w'))
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
@@ -207,7 +207,7 @@ def main():
             'file path', '4/8. a quote with a file path is rejected')
         bad(lambda x: b_of(x, A)['findings'][-1]['now'].append(dict(date='', quote={'orig': 'The user attached a file.'})),
             'app notice', '4. a quote of the attachment notice is rejected')
-        bad(lambda x: next(f for f in x['fleet'] if f.get('copy_kind') == 'description')['copy'].append({'text': 'no bot'}),
+        bad(lambda x: next(f for f in x['fleet'] if f.get('kind') == 'job_text')['copy'].append({'text': 'no bot'}),
             '{"bot", "text"}', '6. a malformed per-bot copy list is rejected')
         # 7. pointers; 6/8 rendering
         fz = json.load(open(f'{W}/findings.json'))

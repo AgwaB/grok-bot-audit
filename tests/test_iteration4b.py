@@ -80,8 +80,8 @@ def test_generic_default(root):
     mr.set_ui({}); h = fleet_html(mr.page(fz))
     check('id="bot-fleet"' in h and '<div class="no">' in h, 'B2. a fleet with a clean-up candidate keeps the full numbered items')
     crit = open(os.path.join(SK, 'references', 'criteria.md'), encoding='utf-8').read()
-    check('paste test' in crit and 'lodging type' in crit and 'Ask if the request is ambiguous.' in crit,
-          'A. criteria.md section 5 has the paste test and the lodging/meal/time example as specific')
+    check('paste test' in crit and 'Ask if the request is ambiguous.' in crit and 'lodging' not in crit and 'hostel' not in crit,
+          'A. criteria.md section 5 has the paste test, with generic examples that are not a fixture answer')
 
 def test_all_keep(root):
     W, dr = skeleton(root, 'replay-tiny')

@@ -28,26 +28,32 @@ thresholds are in `criteria.md`. Everything the reader sees is written by you in
 The suggested status comes from `criteria.md` §2; change it only for a reason listed in §5 step 5, named in `why` in
 one sentence.
 - **Fine bots:** `issue` is a neutral 2-6 word line ("Working well", "Nothing repeating"). Not a problem statement:
-  a small proposal (for example, an empty description) still belongs in the findings, not in the issue column.
+  a small proposal (for example, no saved job description) still belongs in the findings, not in the issue column.
+  A bot that is too new to judge (`too_new` in diag) says so in `issue` ("Too new to judge"); one kept by its routine
+  or its slow rhythm says why in `why` (the skeleton drafts it).
 - **Clean-up bots:** one finding (`"cleanup": true`) says why (usage facts); fold any other finding of that bot into it,
   since the only thing offered is "Show me how to clean up X". The skeleton sets its `short` to that line in English:
   rewrite it in the user's language. That `short` is both its top-3 line and its one option (SKILL.md step 9). It may be in the top 3 like any finding (by value),
-  labelled with the clean-up wording. The shared description item skips clean-up bots on purpose: no text is written
+  labelled with the clean-up wording. The shared job-text item skips clean-up bots on purpose: no text is written
   for a bot you suggest removing. The fleet keep / clean-up item explains how; don't repeat
   the how in each bot. No `copy` unless the bot's job should move to another bot: then `copy` is the text for that
-  other bot, with `copy_kind` `description` or `memory`.
+  other bot, with `copy_kind` `memory` (a message asking it to remember).
 
 ## Words
 - `fix` is written from the user's side: what they can do, or what will be applied when they pick this item ("Pick this
-  and a rule is saved to Recipe Helper's memory"; "Paste this into its description"). Never word it as if you had
+  and a rule is saved to Garden Helper's memory"; "Send this to Print Desk and ask it to remember it"). Never word it as if you had
   already changed, or will quietly change, another bot: nothing changes until the user picks it (SKILL.md step 9).
-- `copy` is pasted into a bot, so write it in the language the user uses with that bot (it may differ from the report).
+- `copy` goes to a bot, so write it in the language the user uses with that bot (it may differ from the report).
+  Text for another bot (`copy_kind` `memory`) is a message the user sends that bot, asking it to remember it. Don't
+  tell the user to paste it into a description or settings field: personal bots may have none (only a Team Bot has a
+  description, edited by its owner).
 - **Routine proposals** (`copy_kind` `routine`): you (the auditing bot) create the routine if the user picks it, so
   its `copy` (what the routine does) is in the user's report language, not the other bot's chat language. Any time in
   it (`fix`, `copy`, `short`) is in the user's real time zone from your context, never the replay timeline's UTC offset
   in a test, and names that zone once (for example "every day at 17:00 <zone>").
-- Description for an empty-description bot: 1-2 sentences, under about 200 characters: what the bot does for this user
-  and how they like it done, taken from how they actually use it. No promises the bot can't keep.
+- Job text for a bot with no saved job description (the `job_text` fleet item): 1-2 sentences, under about 200
+  characters, what the bot does for this user and how they like it done, taken from how they actually use it, worded
+  as a message to that bot ("Remember: your job is…"). No promises the bot can't keep.
 - `date` is the run date (in replay tests, the recorded date). `date_label` is that date as the reader writes it. The
   period covered comes from the data; mention it only if useful.
 - Evidence dates (`now[].date`) come as `MM/DD`. You may rewrite them the way the reader writes dates, but use one
@@ -100,6 +106,7 @@ one sentence.
 - **Skipped questions:** one or two mean nothing. Several of the same kind from one bot (it keeps asking which next
   step, or for permission it didn't need) can justify a rule like "go ahead with the recommended option and say what
   you did".
+- **Setup items** (`kind` group, redundant_groups, connector, safety_rules, routine_cost): `setup.md`.
 - **Shared causes:** one fleet item; each bot points to it with `"see": "fleet-N"`. When each bot needs its own text,
   `copy` is a list of `{"bot", "text"}`.
 - **No proposals at all:** the report hides the top-3 section. In the chat, say in one line that there is nothing to

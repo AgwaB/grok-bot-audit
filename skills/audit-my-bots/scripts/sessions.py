@@ -83,6 +83,11 @@ def replay(a):
     for b in bots:
         print(f"{b['id']}\t{b['name']}")
 
+# A group-chat turn starts with the app's tag ([Group chat: "name"] or [group chat]); the tag is not typed text.
+GROUP_RE = re.compile(r'\s*\[group chat(?::\s*"([^"]*)")?\]\s*', re.I)
+BROWSER_RE = re.compile(r'browser|computer|navigate|playwright|chrome', re.I)
+HOST_RE = re.compile(r'https?://([A-Za-z0-9.-]+\.[A-Za-z]{2,})')
+
 def bot_text(name, inp):
     if name == 'CallDynamicTool' and inp.get('toolName') == 'SendToUser':
         inp = call_args(inp)
@@ -115,8 +120,11 @@ def parse_one(d):
                 if k == 'real':
                     if ts: offsets[ts.utcoffset()] += 1
                     ct, att = clean_user(t, with_meta=True)
+                    g = GROUP_RE.match(ct)
+                    if g: ct = ct[g.end():].strip()
                     ev = dict(role='user', ts=ts or last_ts, text=ct)
                     if att: ev['attachments'] = att
+                    if g: ev['group'] = g.group(1) or ''
                     events.append(ev)
                 elif k == 'skipped_question':
                     q = re.search(r'without responding \((.*?)\)\. Treat', t, re.S)
@@ -130,6 +138,12 @@ def parse_one(d):
                     events.append(dict(role='bot', ts=last_ts, text=bt))
                 elif x.get('name') == 'UpdateMemory' and inp.get('action', 'write') == 'write' and inp.get('fact'):
                     events.append(dict(role='app', kind='memory_write', ts=last_ts, text=str(inp.get('fact'))[:400]))
+                elif x.get('name') == 'CallDynamicTool' and inp.get('namespace'):
+                    events.append(dict(role='app', kind='plugin_call', ts=last_ts, text=str(inp['namespace'])[:80]))
+                elif BROWSER_RE.search(str(x.get('name') or '')):
+                    # browser or computer use: keep only the site's host name (never the full address or page text)
+                    hosts = sorted({h.lower() for h in HOST_RE.findall(json.dumps(inp, ensure_ascii=False))})
+                    events.append(dict(role='app', kind='browser', ts=last_ts, text=' '.join(hosts)[:200]))
             elif role == 'assistant' and ty == 'text' and (x.get('text') or '').strip():
                 fallback_text.append(dict(role='bot', ts=last_ts, text=x['text'], _pos=len(events)))
     if not any(ev['role'] == 'bot' for ev in events):   # bots that answer in plain text

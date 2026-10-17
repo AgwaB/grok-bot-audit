@@ -100,11 +100,11 @@ Pick the topic of the **main** objection. If two fit, prefer the one a written r
 
 ## Examples (invented, for illustration)
 Corrections (label true):
-- prev: a 12-step recipe with history · user: "Too long. Just the steps." → correction / format_length / high
+- prev: a five-paragraph product blurb · user: "Too long. Two sentences max." → correction / format_length / high
 - prev: a list of topics · user: "I already wrote about the second one. Another." → correction / repeated_content / high
 - prev: a summary · user: "It has 3,000 stars though?" · next: "You're right, I misread it." → correction / accuracy_sources / high
-- prev: hotel options · user: "That's not what I asked, I meant a hostel" → correction / misread_intent / high
-- prev: a long summary · user: "Demasiado largo. En una línea, por favor" → correction / format_length / high
+- prev: a quote for 500 flyers · user: "That's not what I asked, I meant 50 posters" → correction / misread_intent / high
+- prev: a cover letter · user: "Zu förmlich, bitte lockerer" (too formal, more relaxed please) → correction / tone_style / high
 - prev: paid tools · user: "Not paid APIs, set up something free" → correction / method_choice / medium
 
 Not corrections (label false):

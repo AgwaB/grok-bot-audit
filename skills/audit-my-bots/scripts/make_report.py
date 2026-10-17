@@ -2,9 +2,10 @@
 """Bot Audit, step 5: render the findings JSON as one self-contained HTML file plus a PDF.
 
 Usage:
-  python3 make_report.py W/findings.json --outdir W/report [--no-pdf]
+  python3 make_report.py W/findings.json --outdir W/report [--no-pdf] [--previous OLD/report/summary.json]
 
-Output: fleet_report_<date>.html and fleet_report_<date>.pdf.
+Output: fleet_report_<date>.html and fleet_report_<date>.pdf, plus summary.json (statuses, proposal counts and item
+kinds; no wording). With --previous it prints UNCHANGED or CHANGED against an earlier run (the weekly re-check).
 Schema: references/findings-schema.md. This script owns only the structure and layout. All wording comes from
 findings.json, written by the host bot in the user's language: text fields, "ui" labels (English defaults below are
 only a fallback), "date_label" (the date as the reader writes it; fallback: the ISO date) and "lang" (sets <html lang>,
@@ -28,8 +29,10 @@ UI_DEFAULT = {
     'n_items': '{n}', 'n_see': '+ shared item', 'top': 'Do these 3 first', 'topref': '{bot}, item {n}', 'bybot': 'Bot by bot', 'fleet': 'Across all bots',
     'fleet_h': 'All bots', 'fleet_iss': 'Overlaps, outages, clean-up candidates',
     'fleet_note': '',
+    'setup': 'Your setup', 'setup_h': 'Setup', 'setup_iss': 'Groups, plugins, routines, safety rules',   # only with setup items
     'fix': 'Fix', 'apply': 'Apply', 'copy': 'Copy', 'copied': 'Copied',
-    'kind': {'description': 'Text for the description', 'memory': 'Text for memory', 'routine': 'Text for a new routine', 'other': 'Text to add'},
+    'kind': {'description': 'Text for the description', 'memory': 'Text to send it to remember', 'routine': 'Text for the routine',
+             'group': "Text for the group's first message", 'other': 'Text to add'},
     'src': {'memory': 'Memory', 'description': 'Description'},
     'why': 'Why this status', 'improving': 'Already improving, nothing to do', 'more': 'More ({n})', 'see': 'See: {ref}',
     'info': 'For your information', 'collapse': 'Collapse', 'expand': 'Show proposals ({n})', 'nothing': 'Nothing major to fix.',
@@ -312,10 +315,16 @@ def has_quote(d):
     return any(isinstance(e, dict) and e.get('quote') or isinstance(e, str) and '"' in e
                for _, f in all_findings(d) for e in f.get('now', []))
 
+SETUP_KINDS = ('group', 'redundant_groups', 'connector', 'safety_rules', 'routine_cost')
+
+def is_setup(f):
+    return f.get('kind') in SETUP_KINDS
+
 def compact_fleet(d):
     """The fleet section holds only the all-keep line (no clean-up candidate, no other item): one compact paragraph,
-    no numbered item and no collapsible box (it used to show a stray "1" and take its own PDF page)."""
-    fl = d.get('fleet', [])
+    no numbered item and no collapsible box (it used to show a stray "1" and take its own PDF page). Setup items have
+    their own section and don't count here."""
+    fl = [f for f in d.get('fleet', []) if not is_setup(f)]
     if len(fl) != 1 or any(b['status'] == 'red' for b in d['bots']): return None
     f = fl[0]
     if not f.get('info') or f.get('copy') or f.get('see'): return None
@@ -374,13 +383,18 @@ def body(d, print_mode=False):
                     f'<span class="stt {cls[b["status"]]}"><span class="mk"></span>{E(t["st"][b["status"]])}</span>'
                     f'<span class="iss">{E(T(b["issue"]))}</span>'
                     f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(toggle(b["findings"] + b.get("more", [])))}</span></span></summary>{fs}</details>')
-    fleet = ''.join(finding(f, t['fleet_bot'], 'fleet', i) for i, f in enumerate(d.get('fleet', []), 1))
+    fleet = ''.join(finding(f, t['fleet_bot'], 'fleet', i) for i, f in enumerate(d.get('fleet', []), 1) if not is_setup(f))
+    sitems = [f for f in d.get('fleet', []) if is_setup(f)]
+    setup = ''.join(finding(f, t['fleet_bot'], 'fleet', i) for i, f in enumerate(d.get('fleet', []), 1) if is_setup(f))
+    setup_html = (f'<h2>{E(t["setup"])}</h2><details class="bot" id="bot-setup" open><summary><h3>{E(t["setup_h"])}</h3><span class="stt"></span>'
+                  f'<span class="iss">{E(t["setup_iss"])}</span><span class="tog"><span class="o">{E(t["collapse"])}</span>'
+                  f'<span class="c">{E(toggle(sitems))}</span></span></summary>{setup}</details>') if sitems else ''
     cf = compact_fleet(d)
     if cf is not None:
         fleet_html = f'<p class="note fleet-keep" id="fleet-1">{E(cf)}</p>'
     else:
         fleet_html = (f'<details class="bot" id="bot-fleet" open><summary><h3>{E(t["fleet_h"])}</h3><span class="stt"></span><span class="iss">{E(t["fleet_iss"])}</span>\n'
-                      f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(toggle(d.get("fleet", [])))}</span></span></summary>{fleet}</details>')
+                      f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(toggle([f for f in d.get("fleet", []) if not is_setup(f)]))}</span></span></summary>{fleet}</details>')
     return f"""<div class="page">
 <header><h1>{E(T(d['title']).split(' (')[0])}</h1><p class="when">{E(t['when'].format(date=(d.get('date_label') or d['date'])))}</p><p class="lede">{E(lede)}</p></header>
 <h2>{E(t['glance'])}</h2>
@@ -390,6 +404,7 @@ def body(d, print_mode=False):
 <h2>{E(t['fleet'])}</h2>
 {f'<p class="note">{E(t["fleet_note"])}</p>' if t.get('fleet_note') else ''}
 {fleet_html}
+{setup_html}
 <footer>{E(footer(d))}</footer>
 </div>"""
 
@@ -425,7 +440,7 @@ def visible(h):
     return re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', h)))
 
 # Labels shown only in some reports; check_report flags them only when the report uses them.
-CONDITIONAL = ('n_items', 'fleet_note', 'footer_tr', 'footer_q', 'in_chat', 'too_early', 'expand_info', 'who_bot',
+CONDITIONAL = ('setup', 'setup_h', 'setup_iss', 'n_items', 'fleet_note', 'footer_tr', 'footer_q', 'in_chat', 'too_early', 'expand_info', 'who_bot',
                'lede_all', 'lede_y', 'lede_r', 'lede_none')
 
 def placeholder_only(v):
@@ -447,16 +462,37 @@ def check_report(d, h):
         if UI.get(k) == UI_DEFAULT.get(k): same.append(k)
         if has_translation(d) and UI.get('footer_tr') == UI_DEFAULT['footer_tr']: same.append('footer_tr')
         if has_quote(d) and UI.get('footer_q') == UI_DEFAULT['footer_q']: same.append('footer_q')
-        secs = [b['findings'] + b.get('more', []) for b in d['bots']] + ([] if compact_fleet(d) is not None else [d.get('fleet', [])])
+        secs = [b['findings'] + b.get('more', []) for b in d['bots']] + ([] if compact_fleet(d) is not None else [[f for f in d.get('fleet', []) if not is_setup(f)]])
         if any(not any(not f.get('info') and not f.get('see') for f in x) for x in secs) and UI.get('expand_info') == UI_DEFAULT['expand_info']:
             same.append('expand_info')
         if any(e.get('chat') for _, f in all_findings(d) for e in f.get('now', []) if isinstance(e, dict)) and UI.get('in_chat') == UI_DEFAULT['in_chat']: same.append('in_chat')
         if any(f.get('too_early') for _, f in all_findings(d)) and UI.get('too_early') == UI_DEFAULT['too_early']: same.append('too_early')
+        if any(is_setup(f) for f in d.get('fleet', [])):
+            same += [k for k in ('setup', 'setup_h', 'setup_iss') if UI.get(k) == UI_DEFAULT[k]]
         if same: out.append('labels still in English: ' + ', '.join(same))
     return out
 
-def build(d, outdir, pdf=True):
+def summary(d):
+    """What the weekly re-check compares between runs: statuses, proposal counts and the kinds of items (not wording)."""
+    sig = lambda f: f.get('kind') or f.get('topic') or ('cleanup' if f.get('cleanup') else 'info' if f.get('info') else 'other')
+    return dict(date=d['date'], bots={T(b['name']): dict(status=b['status'], proposals=NPROP(b),
+                                                         items=sorted(sig(f) for f in b['findings'] + b.get('more', [])))
+                                      for b in d['bots']},
+                fleet=sorted(sig(f) for f in d.get('fleet', [])))
+
+def compare(cur, prev_path):
+    prev = json.load(open(prev_path, encoding='utf-8'))
+    diff = [n for n in sorted(set(cur['bots']) | set(prev.get('bots', {}))) if cur['bots'].get(n) != prev.get('bots', {}).get(n)]
+    if cur['fleet'] != prev.get('fleet'): diff.append('(all bots / setup)')
+    return diff
+
+def build(d, outdir, pdf=True, previous=None):
     set_ui(d.get('ui'))
+    sm = summary(d)
+    json.dump(sm, open(os.path.join(outdir, 'summary.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    if previous:
+        diff = compare(sm, previous)
+        print('compared with ' + previous + ': ' + ('UNCHANGED' if not diff else 'CHANGED: ' + ', '.join(diff)))
     base = os.path.join(outdir, f'fleet_report_{d["date"]}')
     h = page(d)
     open(base + '.html', 'w', encoding='utf-8').write(h); print('wrote', base + '.html')
@@ -477,10 +513,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('findings'); ap.add_argument('--outdir', default='report')
     ap.add_argument('--no-pdf', action='store_true')
+    ap.add_argument('--previous', help="an earlier run's report/summary.json: prints UNCHANGED or CHANGED (weekly re-check)")
     a = ap.parse_args()
     d = json.load(open(a.findings, encoding='utf-8'))
     os.makedirs(a.outdir, exist_ok=True)
-    build(d, a.outdir, pdf=not a.no_pdf)
+    build(d, a.outdir, pdf=not a.no_pdf, previous=a.previous)
 
 if __name__ == '__main__':
     main()
