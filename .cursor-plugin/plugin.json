@@ -3,8 +3,11 @@
   "displayName": "Bot Audit",
   "version": "0.1.0",
   "description": "Check up on your Grok Bots from their own chat history: usage per bot, repeated corrections, unanswered requests and overlaps, with evidence-backed proposals and merge/remove suggestions in a plain-language HTML and PDF report. English by default, Korean optional.",
+  "homepage": "https://github.com/AgwaB/grok-bot-audit",
+  "repository": "https://github.com/AgwaB/grok-bot-audit",
   "author": {
-    "name": "Bot Audit contributors"
+    "name": "AgwaB",
+    "url": "https://github.com/AgwaB"
   },
   "license": "MIT",
   "logo": "assets/logo.png",
