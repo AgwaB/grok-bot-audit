@@ -1,0 +1,23 @@
+{
+ "skill_name": "audit-my-bots",
+ "note": "Replay scenarios for tests/EVAL.md. 'replay' is a folder under the eval root (default /workspace/bot-audit-eval). Real-run replays hold user data and live outside the repo. Prompts in other languages are written as JSON escapes.",
+ "evals": [
+  {"id": "ko-user", "replay": "replay-ko", "lang": "ko",
+   "prompt": "\ub0b4 \ubd07\ub4e4 \uc810\uac80\ud574\uc918",
+   "expected_output": "Korean chat summary and a Korean HTML+PDF report for the 7 bots; no attachment notices, paths or false 'same request' items; shared description item uses per-bot copy.",
+   "expect": {"log_has": ["judge_inputs\\.py.*--all"]}},
+  {"id": "en-user", "replay": "replay-en", "lang": "en",
+   "prompt": "Can you audit my bots? Which ones do I not need?",
+   "expected_output": "English summary and report for the 7 bots with keep/clean-up suggestions, offered as 'Show me how to clean up X', never 'Delete X'.",
+   "expect": {}},
+  {"id": "ja-synth", "replay": "replay-synth-ja", "lang": "ja",
+   "prompt": "\u79c1\u306e\u30dc\u30c3\u30c8\u3092\u70b9\u691c\u3057\u3066",
+   "expected_output": "Japanese report: Old Notes Clean up; Recipe Helper and Trip Planner Needs work; the Japanese memo bot Fine. English quotes kept verbatim with Japanese translations.",
+   "expect": {"status": {"Old Notes": "red", "Recipe Helper": "yellow", "Trip Planner": "yellow", "\u30e1\u30e2\u30dc\u30c3\u30c8": "green"},
+              "min_proposals": {"Recipe Helper": 1, "Trip Planner": 1}}},
+  {"id": "tiny-clean", "replay": "replay-tiny", "lang": "en",
+   "prompt": "check my bots",
+   "expected_output": "Two healthy bots: both Fine, nothing to fix, no invented problems.",
+   "expect": {"all_green": true, "no_proposals": true}}
+ ]
+}

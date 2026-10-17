@@ -91,12 +91,35 @@ def user_kind(t):
     if '<user_query>' in t: return 'real'
     return 'other'
 
-def clean_user(t):
+# Text the app itself adds inside a user message (not typed by the user). These follow the app's fixed transcript
+# format, like the <timestamp> tag, so they are matched by shape: a notice line that starts "The user attached/shared…"
+# followed by "- <path> …" lines, and any absolute file path. Removed before similarity checks, candidate extraction and
+# quote checks, so they can't become leads or quotes.
+APP_NOTICE_RE = re.compile(r'^[ \t]*The user (?:attached|shared|uploaded|sent|added) (?:a |an |the |some )?(?:file|files|image|images|attachment|attachments)\b.*$', re.M | re.I)
+NOTICE_ITEM_RE = re.compile(r'^[ \t]*[-*•][ \t]*(?:/|[A-Za-z]:\\)\S*.*$', re.M)
+PATH_RE = re.compile(r'(?<![\w:/.~])(?:~|[A-Za-z]:)?(?:/[\w.@%+=-]+){2,}/?|(?<![\w])[A-Za-z]:\\(?:[\w.@ -]+\\)*[\w.@-]+')
+
+def strip_app_text(t):
+    """Remove app-injected notices and file paths. Returns (clean text, number of notices removed)."""
+    n = len(APP_NOTICE_RE.findall(t or ''))
+    t = APP_NOTICE_RE.sub('', t or '')
+    t = NOTICE_ITEM_RE.sub('', t)
+    t = PATH_RE.sub('', t)
+    t = re.sub(r'[ \t]{2,}', ' ', t)
+    t = re.sub(r'[ \t]+\n', '\n', t)
+    return re.sub(r'\n{3,}', '\n\n', t).strip(), n
+
+def has_app_text(t):
+    """True if a text still carries an app notice or a file path (never allowed in quotes)."""
+    return bool(APP_NOTICE_RE.search(t or '') or PATH_RE.search(t or ''))
+
+def clean_user(t, with_meta=False):
     m = re.search(r'<user_query>(.*?)</user_query>', t, re.S)
     t = m.group(1) if m else t
     t = re.sub(r'\[t\w+\]|\[Sent from machine [^\]]+\]', '', t)
     t = re.sub(r'^\s*\[Answering your question [^\]]*\]\s*', '', t)
-    return t.strip()
+    t, n = strip_app_text(t)
+    return (t, n) if with_meta else t
 
 def grams(t):
     t = re.sub(r'\s+', '', norm(t).lower())
@@ -117,9 +140,9 @@ def dump_json(obj, p):
         json.dump(obj, fh, ensure_ascii=False, indent=1)
 
 # ---------- cue phrases ----------
-# A minimal English fallback so the pipeline runs without input. For other languages the host bot either writes
-# W/cues.json with the same keys (added to these), or skips the cue filter and judges every reply itself
-# (judge_inputs.py --all). See references/cues.md.
+# A minimal English fallback so the pipeline runs without input. For chats not mostly in English the host bot
+# judges every reply itself (judge_inputs.py --all) and may write W/cues.json with the same keys (added to these).
+# See references/cues.md.
 CUES_EN = {
     'directive': [r"\bno\b", r"\bnot (that|this|what)\b", r"\binstead\b", r"\bdon'?t\b", r"\bdo not\b", r"\bstop\b",
                   r"\bwrong\b", r"\bisn'?t\b", r"\bthat'?s not\b", r"\bi meant\b", r"\bi asked\b",

@@ -4,11 +4,17 @@
   python3 sessions.py list-bots --work W [--self AGENT_ID]
       Reads only "name" and "description" from <agents>/*/profile.json -> W/bots.json.
       The auditing bot itself (--self) is skipped.
-  python3 sessions.py save-page FILE --work W --bot AGENT_ID
-      Copies one saved ReadTranscript result to W/transcripts/<id>/page_<start>.txt and prints
+  python3 sessions.py save-page FILE [FILE ...] --work W --bot AGENT_ID
+  python3 sessions.py save-page AGENT_ID=FILE [AGENT_ID=FILE ...] --work W
+      Copies saved ReadTranscript results to W/transcripts/<id>/page_<start>.txt and prints, per file,
       "start=<A> end=<B> total=<N>" so you know the next `before` value (A) and when you reached 0.
+      Several files (one bot or several) can be saved in one call.
   python3 sessions.py parse --work W
       W/transcripts/<id>/page_*.txt -> W/timelines/<id>.json (events, memory block, coverage).
+  python3 sessions.py replay --work W [--from DIR]
+      Testing only (tests/EVAL.md): instead of steps 1-2, copy DIR/bots.json and DIR/transcripts/<id>/page_*.txt
+      (pre-saved pages) into W, plus DIR/replay.json ({"now": "YYYY-MM-DD HH:MM"}) if present. DIR defaults to
+      $AUDIT_REPLAY_DIR.
 
 Read-only on bot data. Never opens anything except profile.json and the saved pages.
 """
@@ -35,14 +41,38 @@ def list_bots(a):
     print(f'{len(bots)} bots -> {os.path.join(a.work, "bots.json")}', file=sys.stderr)
 
 def save_page(a):
-    info = page_start(a.file)
-    if not info:
-        sys.exit('no "positions A–B of N" header found in ' + a.file)
-    d = os.path.join(a.work, 'transcripts', a.bot)
-    os.makedirs(d, exist_ok=True)
-    dst = os.path.join(d, f'page_{info[0]:05d}.txt')
-    shutil.copyfile(a.file, dst)
-    print(f'start={info[0]} end={info[1]} total={info[2]} saved={dst}' + (' (reached the start)' if info[0] == 0 else ''))
+    bad = 0
+    for item in a.files:
+        bot, f = (item.split('=', 1) if '=' in item and not os.path.exists(item) else (a.bot, item))
+        if not bot:
+            print(f'{item}: no bot id (use --bot ID or ID=FILE)'); bad += 1; continue
+        info = page_start(f)
+        if not info:
+            print(f'{bot}: no "positions A–B of N" header found in {f}'); bad += 1; continue
+        d = os.path.join(a.work, 'transcripts', bot)
+        os.makedirs(d, exist_ok=True)
+        dst = os.path.join(d, f'page_{info[0]:05d}.txt')
+        shutil.copyfile(f, dst)
+        print(f'{bot[:8]} start={info[0]} end={info[1]} total={info[2]} saved={dst}' + (' (reached the start)' if info[0] == 0 else ''))
+    if bad:
+        sys.exit(1)
+
+def replay(a):
+    src = a.src or os.environ.get('AUDIT_REPLAY_DIR')
+    if not src or not os.path.isfile(os.path.join(src, 'bots.json')):
+        sys.exit('replay: give --from DIR or set AUDIT_REPLAY_DIR (a folder with bots.json and transcripts/<id>/page_*.txt)')
+    os.makedirs(a.work, exist_ok=True)
+    shutil.copyfile(os.path.join(src, 'bots.json'), os.path.join(a.work, 'bots.json'))
+    if os.path.isfile(os.path.join(src, 'replay.json')):
+        shutil.copyfile(os.path.join(src, 'replay.json'), os.path.join(a.work, 'replay.json'))
+    n = 0
+    for p in glob.glob(os.path.join(src, 'transcripts', '*', 'page_*.txt')):
+        d = os.path.join(a.work, 'transcripts', os.path.basename(os.path.dirname(p)))
+        os.makedirs(d, exist_ok=True); shutil.copyfile(p, os.path.join(d, os.path.basename(p))); n += 1
+    bots = load_json(os.path.join(a.work, 'bots.json'), [])
+    for b in bots:
+        print(f"{b['id']}\t{b['name']}")
+    print(f'replay: {len(bots)} bots, {n} saved pages from {src} -> {a.work}. Skip step 2; go on with sessions.py parse.')
 
 def bot_text(name, inp):
     if name == 'CallDynamicTool' and inp.get('toolName') == 'SendToUser':
@@ -75,7 +105,10 @@ def parse_one(d):
                 if m: memory = dict(text=m.group(1).strip(), ts=ts or last_ts)
                 if k == 'real':
                     if ts: offsets[ts.utcoffset()] += 1
-                    events.append(dict(role='user', ts=ts or last_ts, text=clean_user(t)))
+                    ct, att = clean_user(t, with_meta=True)
+                    ev = dict(role='user', ts=ts or last_ts, text=ct)
+                    if att: ev['attachments'] = att
+                    events.append(ev)
                 elif k == 'skipped_question':
                     q = re.search(r'without responding \((.*?)\)\. Treat', t, re.S)
                     events.append(dict(role='app', kind='skipped_question', ts=ts or last_ts, text=norm(q.group(1)) if q else ''))
@@ -120,9 +153,11 @@ def main():
     sp = ap.add_subparsers(dest='cmd', required=True)
     p = sp.add_parser('list-bots'); p.add_argument('--work', required=True); p.add_argument('--self')
     p.add_argument('--agents-dir', default=AGENTS_DIR); p.set_defaults(fn=list_bots)
-    p = sp.add_parser('save-page'); p.add_argument('file'); p.add_argument('--work', required=True)
-    p.add_argument('--bot', required=True); p.set_defaults(fn=save_page)
+    p = sp.add_parser('save-page'); p.add_argument('files', nargs='+'); p.add_argument('--work', required=True)
+    p.add_argument('--bot'); p.set_defaults(fn=save_page)
     p = sp.add_parser('parse'); p.add_argument('--work', required=True); p.set_defaults(fn=parse)
+    p = sp.add_parser('replay'); p.add_argument('--work', required=True); p.add_argument('--from', dest='src')
+    p.set_defaults(fn=replay)
     a = ap.parse_args(); a.fn(a)
 
 if __name__ == '__main__':

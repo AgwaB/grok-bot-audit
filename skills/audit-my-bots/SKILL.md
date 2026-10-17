@@ -47,6 +47,9 @@ Marketplace installs are cached under `/home/box/agent-data/plugins/cache/<marke
 local copies live under `~/.cursor/plugins/local/bot-audit/`.
 Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts; nothing else to install.
 
+For testing only: if `$AUDIT_REPLAY_DIR` is set, run `python3 "$SKILL/scripts/sessions.py" replay --work "$W"` instead of
+steps 1 and 2 (it copies pre-saved pages; see the repo's `tests/EVAL.md`), then continue with `parse`.
+
 ## 1. List the bots
 ```bash
 python3 "$SKILL/scripts/sessions.py" list-bots --work "$W" --self "<your own agent id>"
@@ -56,11 +59,18 @@ Your own id is the folder name in your agent directory (`/home/box/agent-data/ag
 
 ## 2. Fetch each bot's history yourself
 For every bot in `bots.json`, call **ReadTranscript** with `agent_id=<id>`, `limit=200` and `write_to_file=true`
-(it may sit under the `cursor` namespace through CallDynamicTool). It returns the newest page and a file path. Save each page:
+(it may sit under the `cursor` namespace through CallDynamicTool). It returns the newest page and a file path. Save pages:
 ```bash
-python3 "$SKILL/scripts/sessions.py" save-page "<file path from ReadTranscript>" --work "$W" --bot "<id>"
+python3 "$SKILL/scripts/sessions.py" save-page --work "$W" "<id>=<file path>" ["<id2>=<file path>" ...]
 ```
-It prints `start=A end=B total=N`. Call ReadTranscript again with `before=A`, and repeat until a page prints `start=0`.
+It prints `start=A end=B total=N` per page. Call ReadTranscript again with `before=A`, and repeat until a page prints
+`start=0`. One bot's pages must come one after another (`before` is only known from the last page), and a big bot can
+take dozens of pages, so:
+- If you can make several calls at once, fetch different bots side by side, then save that round's pages in one
+  `save-page` call.
+- Every few bots, send the user a one-line progress note (for example "Read 3 of 7 bots…"), so a long fetch doesn't
+  look stuck.
+
 Then:
 ```bash
 python3 "$SKILL/scripts/sessions.py" parse --work "$W"
@@ -68,15 +78,20 @@ python3 "$SKILL/scripts/sessions.py" parse --work "$W"
 If it warns that pages don't reach the start or the end, fetch the missing pages before going on.
 
 ## 3. Find correction candidates
-The built-in cue phrases are a small English fallback. For chats in other languages, either write `$W/cues.json`
-(`$SKILL/references/cues.md`) or add `--all` to judge every reply yourself.
 ```bash
-python3 "$SKILL/scripts/judge_inputs.py" --work "$W"
+python3 "$SKILL/scripts/judge_inputs.py" --work "$W" --all      # chats not mostly in English (the default choice)
+python3 "$SKILL/scripts/judge_inputs.py" --work "$W"            # chats mostly in English: built-in cue filter
 ```
+The built-in cue phrases are a small English list. If most user messages aren't in English, use `--all`: you judge every
+reply that follows a bot message, in any language. Only if `--all` gives more items than you can judge carefully (several
+hundred), write `$W/cues.json` from words in the actual chats and run without `--all`; `$SKILL/references/cues.md` says
+how. Attachment notices and file paths are already stripped from user messages.
 
 ## 4. Judge every candidate
 Read `$SKILL/references/rubric_correction.md`. Judge each item in `$W/judge_inputs.json` strictly by its steps, then write
 `$W/labels.json` as `{"<key>": {"label", "type", "topic", "confidence", "evidence"}}` with one entry for every key.
+Long messages are cut to their start and end. If that isn't enough to judge (for example, whether the bot admitted a
+mistake), print the full messages: `python3 "$SKILL/scripts/judge_inputs.py" --work "$W" --show <key> [<key> ...]`.
 
 ## 5. Run the checks
 ```bash
@@ -90,8 +105,16 @@ Read `$SKILL/references/criteria.md` and `findings-schema.md`, then edit `$W/fin
 - **Words:** replace the placeholder English everywhere (titles, fixes, `copy`, `issue`, `why`, `ui` labels, `date_label`)
   with your own plain wording in the user's language. `copy` is the exact text to paste into a description, a memory or a routine, and it must not contradict what the bot already learned.
 - **Quotes:** keep evidence word for word in `quote.orig`. Add `translation` when the chat's language differs from the report's.
+  A memory fact or a bot description may be quoted as evidence: set `"source": "memory"` or `"description"` on that
+  evidence line. Never quote file paths or attachment notices; finalize rejects them.
 - **Leads:** go through `leads`, which includes stale memory facts, promises, the same request in several bots and other bots' jobs. Add a finding only for what you confirm by reading. Drop noise.
+- **Skipped questions:** `leads.skipped_questions` lists choice questions a bot asked that the user moved past without
+  answering. One or two mean nothing; drop them. If one bot has several of the same kind (for example, it keeps asking
+  which next step to take, or for permission it didn't need), propose a rule such as "go ahead with the recommended
+  option and say what you did" for that bot.
 - **Shared causes:** merge cross-bot root causes into one fleet item, and point to it from each bot with `"see": "fleet-N"`.
+  When the fix needs different text per bot (for example, a description for each), make `copy` a list of
+  `{"bot": "<name>", "text": "..."}`.
 - **Status:** set `issue` (2–6 words) and `why` for every bot. If you change a status, say why in `why`.
 - **Review flags:** remove `needs_review`. Then:
 ```bash

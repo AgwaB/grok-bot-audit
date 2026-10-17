@@ -16,4 +16,11 @@
   can't read chats. It never deletes or merges bots; it shows the user how to clean up a bot after checking its routines.
 - The skill finds its files from its own folder, with a fallback to the newest installed copy.
 - One-plugin `.cursor-plugin/marketplace.json` so the repository can be imported directly.
-- Offline end-to-end test on a synthetic fixture (`python3 tests/test_pipeline.py`).
+- Fetching: several pages (several bots) saved in one call; progress notes during long fetches.
+- Judging: `--all` is the default for chats not mostly in English; long messages keep their start and end;
+  `judge_inputs.py --show KEY` prints the full messages.
+- App attachment notices and file paths are stripped from chats before any check and can never be quoted.
+- Evidence may quote a memory fact or a bot description (`source`); a shared fix can carry per-bot paste text
+  (`copy` as a list); the Proposals column counts real proposals only.
+- Offline end-to-end and regression tests on synthetic fixtures, and a skill eval kit: replay mode
+  (`sessions.py replay`), scenarios and an objective grader (`tests/EVAL.md`).

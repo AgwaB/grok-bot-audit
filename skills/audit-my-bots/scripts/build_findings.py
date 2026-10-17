@@ -14,7 +14,7 @@
 """
 import argparse, math, os, re, sys, glob
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import dump_json, load_json, norm
+from common import dump_json, has_app_text, load_json, norm
 
 CONF = {'high': 1.0, 'medium': 0.7, 'low': 0.4}
 TOPIC = {  # title, fix
@@ -35,15 +35,28 @@ def impact_from(n_inc, days=0, bots=1, recurred=False):
     i = 3 if (n_inc >= 4 or days >= 5 or bots >= 3) else 2 if (n_inc >= 2 or days >= 3 or bots >= 2) else 1
     return min(3, i + (1 if recurred else 0))
 
-def corpus(work, diag):
-    parts = []
+def corpus(work, diag=None):
+    """Searchable text by source: chat (messages), memory (memory blocks), description (bot names and descriptions)."""
+    chat, mem, desc = [], [], []
     for p in glob.glob(os.path.join(work, 'timelines', '*.json')):
         tl = load_json(p)
-        parts += [e.get('text') or '' for e in tl['events']]
-        if tl.get('memory'): parts.append(tl['memory']['text'])
+        chat += [e.get('text') or '' for e in tl['events'] if e.get('kind') != 'memory_write']
+        mem += [e.get('text') or '' for e in tl['events'] if e.get('kind') == 'memory_write']
+        if tl.get('memory'): mem.append(tl['memory']['text'])
     for b in load_json(os.path.join(work, 'bots.json'), []):
-        parts += [b.get('name', ''), b.get('description', '')]
-    return norm('\n'.join(parts))
+        desc += [b.get('name', ''), b.get('description', '')]
+    c = {k: norm('\n'.join(v)) for k, v in (('chat', chat), ('memory', mem), ('description', desc))}
+    c['any'] = '\n'.join(c.values())
+    return c
+
+SOURCES = ('chat', 'memory', 'description')
+
+def copy_texts(f):
+    """A finding's paste text(s): "copy" is a string, or a list of {"bot": name, "text": ...} for several bots."""
+    c = f.get('copy')
+    if isinstance(c, list):
+        return [str((x or {}).get('text') or '') if isinstance(x, dict) else str(x or '') for x in c]
+    return [str(c)] if c else []
 
 def skeleton(a):
     diag = load_json(os.path.join(a.work, 'diag.json')); jin = {x['key']: x for x in load_json(os.path.join(a.work, 'judge_inputs.json'), [])}
@@ -94,7 +107,8 @@ def skeleton(a):
         fleet.append(dict(title=f'{len(empty)} bots have no description',
                           now=[dict(date='', text=', '.join(diag['bots'][x]['name'] for x in empty))],
                           fix='Paste a short description into each bot, written from how you actually use it.',
-                          copy=None, copy_kind='description', needs_review=True,
+                          copy=[dict(bot=diag['bots'][x]['name'], text='TODO description') for x in empty],
+                          copy_kind='description', needs_review=True,
                           score=dict(impact=impact_from(0, bots=len(empty)), confidence='medium', effort=1, reversibility=1.0, basis=f'{len(empty)} bots')))
     for o in diag['fleet']['outages']:
         fleet.append(dict(title='Several bots stopped answering at the same time',
@@ -114,7 +128,8 @@ def skeleton(a):
         if b['memory'] and (b['memory']['time_sensitive'] or b['memory']['near_duplicates']):
             leads['memory'][bid] = dict(time_sensitive=b['memory']['time_sensitive'], near_duplicates=b['memory']['near_duplicates'])
         if b['promise_candidates']: leads['promises'][bid] = b['promise_candidates']
-        if b['skipped_questions']['count']: leads['skipped_questions'][bid] = b['skipped_questions']['count']
+        if b['skipped_questions']['count']:
+            leads['skipped_questions'][bid] = dict(count=b['skipped_questions']['count'], questions=b['skipped_questions']['questions'])
         leads['preferences'] += [norm(txt(k))[:120] for k in b['preferences'] if k in jin]
     from make_report import UI_DEFAULT
     draft = dict(schema=3, lang=lang, title='Bot audit report', date=diag['now'][:10], date_label=diag['now'][:10],
@@ -147,15 +162,25 @@ def finalize(a):
         ti = f.get('title'); ti = next(iter(ti.values()), '') if isinstance(ti, dict) else ti
         where = (b['name'] if b else 'fleet') + ' / ' + str(ti)
         if f.get('needs_review'): warns.append(where + ': needs review')
+        c = f.get('copy')
+        if isinstance(c, list) and not all(isinstance(x, dict) and x.get('bot') and x.get('text') for x in c):
+            errors.append(where + ': "copy" as a list needs {"bot", "text"} in every item')
+        if any('TODO' in t for t in copy_texts(f)): warns.append(where + ': copy still has TODO')
         for e in f.get('now', []):
             q = e.get('quote')
             if not q: continue
             orig = q.get('orig') if isinstance(q, dict) else q
             if not orig:
                 errors.append(where + ': quote without "orig" (the exact original words)'); continue
+            src = e.get('source') or 'chat'
+            if src not in SOURCES:
+                errors.append(f'{where}: "source" must be one of {", ".join(SOURCES)}'); continue
+            if has_app_text(orig):
+                errors.append(f'{where}: quote contains a file path or an app notice; quote only words people wrote: "{norm(orig)[:60]}"'); continue
             for seg in [s for s in QUOTE_SPLIT.split(norm(orig)) if len(s) >= 2]:
-                if seg not in text:
-                    errors.append(f'{where}: quote not found word for word in the saved chats: "{seg[:60]}"'); break
+                if seg not in text[src]:
+                    hint = '' if src != 'chat' or seg not in text['any'] else ' (it is in a memory or description: set "source")'
+                    errors.append(f'{where}: quote not found word for word in the saved {src if src != "chat" else "chats"}: "{seg[:60]}"{hint}'); break
     # scores, cap, top 3
     share = {bid: b['share'] for bid, b in diag['bots'].items()}
     cands = []

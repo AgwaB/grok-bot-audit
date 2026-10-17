@@ -44,10 +44,13 @@ The scripts fix the structure; every word the reader sees comes from this file, 
     {"date": "03/01", "quote": {"orig": "Too long. Just give me the steps, no history"}},
     {"date": "03/02", "quote": {"orig": "Demasiado largo, solo los pasos", "translation": "Too long, just the steps", "lang": "es"}},
     {"date": "03/03", "who": "Bot", "quote": {"orig": "From now on I will keep recipes short."}},
+    {"date": "02/20", "source": "memory", "quote": {"orig": "The user currently cooks for two people."}},
     {"date": "", "text": "Last request 03/08"}   // plain fact, not a quote
   ],
   "fix":  "Save the format you want as a default.",
   "copy": "Recipes: list the steps only. No history or stories.",   // text the user pastes; optional
+  // or, when one item needs different text per bot (a shared fleet item):
+  // "copy": [{"bot": "Trip Planner", "text": "Plans trips…"}, {"bot": "Old Notes", "text": "Keeps notes…"}],
   "copy_kind": "memory|description|routine",
   "score": {"impact": 3, "confidence": "high", "effort": 1, "reversibility": 1.0, "basis": "3 incidents on 3 days"},
   "short": "Recipe Helper: steps only",   // optional short line for the top 3
@@ -62,6 +65,15 @@ The scripts fix the structure; every word the reader sees comes from this file, 
 - `translation` (optional) is the quote in the report language, for chats in another language. The report shows it on the
   main line and the original underneath in smaller type.
 - `lang` (optional) is the BCP 47 code of `orig`.
+- `source` (optional, on the evidence line): `chat` (default), `memory` (a memory fact or a memory save) or `description`
+  (a bot's description). The report labels memory and description quotes as such (`ui.src`); finalize checks the quote
+  against that source only.
+- Never quote file paths or the app's attachment notices ("The user attached a file…"). They are stripped from the chats,
+  and finalize rejects any quote that contains them.
+
+## Counts and pointers
+The status table counts real proposals per bot. A pointer (`see`) to a shared fleet item is not counted; the table shows
+it as a separate small link (`ui.n_see`). Info items are not counted either.
 
 ## UI labels (`ui`)
 Keys and English defaults are in `UI_DEFAULT` in `scripts/make_report.py`: section titles (`glance`, `top`, `bybot`, `fleet`),
@@ -69,7 +81,9 @@ table headers (`th`, a list of 4), status names (`st`), copy-box labels (`kind`)
 
 ## Rules finalize enforces
 - `status` is one of green / yellow / red.
-- Every `quote.orig` must appear word for word (whitespace aside) in the saved chats, the memory block, or a bot's name or description.
+- Every `quote.orig` must appear word for word (whitespace aside) in its `source`: the saved chats, the memory, or a bot's
+  name or description. No file paths or app notices.
+- `copy` is a string or a list of `{"bot", "text"}`.
   Use "…" to skip words inside a quote; each piece is checked on its own.
 - With `--strict`, no `needs_review` flags or `TODO` text may remain.
 - Scores become `value`; at most 3 scored findings per bot stay in `findings`, and the rest move to `more`. `top3` is chosen by value

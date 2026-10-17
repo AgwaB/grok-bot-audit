@@ -53,10 +53,10 @@ Each check gives leads; keep a lead only after reading the actual messages.
 | check | definition | usually |
 |---|---|---|
 | Unanswered requests / outage | real request with no reply for 6+ hours; overlapping windows across bots = fleet outage | real; mention once as info. Limit: messages sent while a bot could not run at all (e.g. after a plan limit) may be missing from its history, so silent outages can be undercounted |
-| Skipped question cards | the app reports that the user moved on without tapping a choice | mostly noise: the user often answers in text instead |
+| Skipped question cards | the app reports that the user moved on without tapping a choice | mostly noise (the user often answers in text instead); a finding only when one bot asks several of the same kind of unneeded question |
 | Promises without delivery | "I'll let you know…", then the user nudges ("hello?") | check by reading; often already delivered |
 | Memory facts | facts with "currently/now" older than 3 days; near-duplicates | stale facts are real findings; duplicates rarely matter |
 | Description vs. use | empty description, or a description that contradicts what the bot learned or what the user said later | real |
 | Repeated work across days | similar requests on 3+ different days | routine candidate (score with effort 2) |
-| Same request in several bots | similar text across bots | noisy (shared links); confirm by topic |
+| Same request in several bots | similar text across bots (attachment notices and file paths are stripped first) | noisy (shared links, the same post pasted to several bots); confirm by topic |
 | One bot doing another's job | a request closer to another bot's description than its own, counted only after that bot existed | noisy; keep only clear cases on 2+ days |

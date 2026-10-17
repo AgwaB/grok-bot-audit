@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bot Audit, step 3: usage, repeated corrections, suggested status, and extra checks for every bot.
 
-  python3 diagnostics.py --work W [--now "YYYY-MM-DD HH:MM"]
+  python3 diagnostics.py --work W [--now "YYYY-MM-DD HH:MM"]   (default: now, or "now" in W/replay.json)
       Reads W/bots.json, W/timelines/*.json, W/labels.json (from the judge step) -> W/diag.json
 
 Everything is computed from data inside Grok Bot (saved transcript pages, profile name/description,
@@ -34,6 +34,7 @@ def main():
     if not tls:
         sys.exit('no timelines; run sessions.py parse first')
     all_ts = [e['ts'] for tl in tls.values() for e in tl['events'] if e.get('ts')]
+    a.now = a.now or (load_json(os.path.join(a.work, 'replay.json'), {}) or {}).get('now')   # replay tests pin "now"
     if a.now:
         now = P(a.now)
     else:

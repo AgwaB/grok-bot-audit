@@ -25,6 +25,11 @@ def stamp(t):
 def user(t, text, n):
     return dict(role='user', message=dict(content=[dict(type='text', text=f'{stamp(t)}\n<user_query>\n[t{n}u]\n{text}\n</user_query>')]))
 
+def attach_notice(path, size='120 KB'):
+    """The app's attachment notice, in the shape it takes inside a user message (fake path)."""
+    return ("The user attached a file. They're in your agent store at the paths below; open them with Read.\n"
+            f"- {path} ({size}): an image already shown to you inline, so use this path only when you need the file itself")
+
 def bot(text, k):
     return [dict(role='assistant', message=dict(content=[dict(type='tool_use', id=f'u{k}', name='SendToUser', input=dict(content=text))])),
             dict(role='tool', message=dict(content=[dict(type='tool_result', tool_use_id=f'u{k}', name='SendToUser',
@@ -111,8 +116,8 @@ K = convo([   # the one non-English bot (Japanese), to test non-Latin chats
 CONVOS = {'aaaaaaaa-0000-4000-8000-000000000001': R, 'aaaaaaaa-0000-4000-8000-000000000002': T,
           'aaaaaaaa-0000-4000-8000-000000000003': O, 'aaaaaaaa-0000-4000-8000-000000000004': K}
 
-def write_pages(aid, name, entries, size=8):
-    d = os.path.join(FX, 'pages', aid); os.makedirs(d, exist_ok=True)
+def write_pages(aid, name, entries, size=8, root=None, prefix='raw_'):
+    d = os.path.join(root or os.path.join(FX, 'pages'), aid); os.makedirs(d, exist_ok=True)
     n = len(entries)
     for start in range(0, n, size):
         end = min(n, start + size) - 1
@@ -121,7 +126,7 @@ def write_pages(aid, name, entries, size=8):
         lines += [json.dumps(e, ensure_ascii=False) for e in entries[start:end + 1]]
         lines += ['', 'This is the start of the transcript.' if start == 0 else f'Earlier entries exist; call again with before={start}.', '',
                   '</cursor_untrusted_data_redacted>']
-        open(os.path.join(d, f'raw_{start}.txt'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+        open(os.path.join(d, f'{prefix}{start}.txt'), 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
 
 if __name__ == '__main__':
     shutil.rmtree(FX, ignore_errors=True)

@@ -61,7 +61,7 @@ the fonts of the machine that made it.
 | `skills/audit-my-bots/scripts/make_report.py` | renders the HTML and PDF (headless Chrome, temporary profile) |
 | `skills/audit-my-bots/references/` | correction rubric, criteria, findings schema, language cues, design notes |
 | `assets/` | plugin logo |
-| `tests/` | synthetic fixture (fake bots, fake chats) and an offline end-to-end test |
+| `tests/` | synthetic fixture (fake bots, fake chats), offline tests, and the skill eval kit (`EVAL.md`, `grade.py`) |
 
 ## Privacy and safety
 - Read-only on bot data. Only `profile.json` (name and description) and the history the bot fetches are read.
@@ -76,6 +76,13 @@ python3 tests/test_pipeline.py
 This runs the whole pipeline offline on `tests/fixtures` (regenerate it with `python3 tests/make_fixture.py`) and checks that the HTML and
 PDF are produced in English and in a second language (custom labels and `lang`). It also checks statuses, the outage, the routine candidate, the 3-per-bot cap and that an
 invented quote is rejected.
+
+```bash
+python3 tests/test_regressions.py   # issues found in real runs
+python3 tests/test_grade.py         # the eval grader itself
+```
+To test the skill itself with fresh agents on frozen inputs (replay mode, scenarios, `tests/grade.py`), see
+[`tests/EVAL.md`](tests/EVAL.md).
 
 ## License
 MIT (see `LICENSE`).

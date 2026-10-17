@@ -25,11 +25,12 @@ E = lambda s: html.escape(str(s if s is not None else ''), quote=True)
 # findings.json "ui"; any key it leaves out falls back to these. {placeholders} are filled in by the script.
 UI_DEFAULT = {
     'when': 'Checked {date}', 'glance': 'At a glance', 'th': ['Bot', 'Status', 'Current issue', 'Proposals'],
-    'n_items': '{n}', 'top': 'Do these 3 first', 'topref': '{bot}, item {n}', 'bybot': 'Bot by bot', 'fleet': 'Across all bots',
+    'n_items': '{n}', 'n_see': '+ shared item', 'top': 'Do these 3 first', 'topref': '{bot}, item {n}', 'bybot': 'Bot by bot', 'fleet': 'Across all bots',
     'fleet_h': 'All bots', 'fleet_iss': 'Overlaps, outages, clean-up candidates',
     'fleet_note': 'Nothing is deleted automatically. Before removing a bot, check in the app whether any routine uses it.',
     'fix': 'Fix', 'apply': 'Apply', 'copy': 'Copy', 'copied': 'Copied',
     'kind': {'description': 'Text for the description', 'memory': 'Text for memory', 'routine': 'Text for a new routine', 'other': 'Text to add'},
+    'src': {'memory': 'Memory', 'description': 'Description'},
     'why': 'Why this status', 'improving': 'Already improving, nothing to do', 'more': 'More ({n})', 'see': 'See: {ref}',
     'info': 'For your information', 'collapse': 'Collapse', 'expand': 'Show findings ({n})', 'nothing': 'Nothing major to fix.',
     'fleet_bot': 'All bots', 'st': {'red': 'Clean up', 'yellow': 'Needs work', 'green': 'Fine'},
@@ -85,7 +86,7 @@ table.st th{white-space:nowrap;font-weight:400;font-size:13px;color:var(--faint)
 table.st td{padding:11px 12px 11px 0;border-top:1px solid var(--rule);vertical-align:baseline}
 table.st td.n{width:30%;font-weight:600}table.st td.n a{text-decoration:none;white-space:nowrap}
 table.st td.n a:hover{text-decoration:underline;text-underline-offset:3px}
-table.st td.s{width:16%;white-space:nowrap}table.st td.c{width:10%;text-align:right;color:var(--sub)}
+table.st td.s{width:16%;white-space:nowrap}table.st td.c{width:12%;text-align:right;color:var(--sub)}
 table.st tr.sev-red td{border-top-color:var(--rule)}
 .mk{display:inline-block;width:8px;height:8px;margin-right:7px;vertical-align:1px}
 .st-r{color:var(--r)}.st-r .mk{background:var(--r)}.st-y{color:var(--y)}.st-y .mk{background:var(--y)}
@@ -126,6 +127,8 @@ header h1{letter-spacing:-.015em}
 .cp{margin:10px 0 2px;background:var(--tint);padding:12px 14px 14px;border-radius:3px}
 .cp .k{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;color:var(--sub);margin-bottom:4px}
 .cp .t{white-space:pre-wrap;font-size:15px;line-height:1.65}
+.cp .cb{font-weight:600;color:var(--ink);margin-left:6px}
+table.st td.c .sh{display:block;font-size:12px;color:var(--faint);text-decoration:none;white-space:nowrap}
 button.copy{font:600 13px var(--sans);color:var(--acc);background:none;border:0;padding:2px 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 button.copy.done{color:var(--sub);text-decoration:none}
 label.ap{display:inline-flex;gap:7px;align-items:center;font-size:14px;color:var(--sub);cursor:pointer;white-space:nowrap;user-select:none}
@@ -134,9 +137,9 @@ label.ap input{width:17px;height:17px;margin:0;accent-color:var(--acc)}
 .note{color:var(--sub);margin:4px 0 0;max-width:40em}
 .why{color:var(--sub);margin:6px 0 4px;max-width:44em}.why b{color:var(--ink);font-weight:600;margin-right:6px}
 .imp{margin:14px 0 4px;color:var(--sub)}.imp b{font-weight:600;color:var(--ink)}.imp ul{margin:4px 0 0;padding-left:1.1em}.imp li{margin:2px 0}
-details.more{margin:6px 0 0}details.more>summary{cursor:pointer;color:var(--accent);font-weight:600;padding:8px 0;list-style:none}
+details.more{margin:6px 0 0}details.more>summary{cursor:pointer;color:var(--acc);font-weight:600;padding:8px 0;list-style:none}
 details.more>summary::-webkit-details-marker{display:none}
-.see{color:var(--accent);white-space:nowrap;margin-left:4px}
+.see{color:var(--acc);white-space:nowrap;margin-left:4px}
 .f.pass .fx b{color:var(--sub)}
 footer{margin-top:64px;padding-top:12px;border-top:1px solid var(--rule);color:var(--faint);font-size:12.5px}
 /* action bar */
@@ -213,7 +216,8 @@ def ev_item(it):
         m = EVID.match(it); d, rest = (m.group(1), m.group(2)) if m else ('', it)
         return f'<li><span class="d">{E(d)}</span><span>{inline(rest)}</span></li>'
     d = E(it.get('date', ''))
-    who = f'<span class="who">{E(T(it["who"]))}</span>' if it.get('who') else ''
+    wl = T(it.get('who')) or (UI['src'].get(it.get('source'), '') if it.get('source') in ('memory', 'description') else '')
+    who = f'<span class="who">{E(wl)}</span>' if wl else ''
     aft = f'<span class="aft">{E(T(it["after"]))}</span>' if it.get('after') else ''
     if it.get('quote'):
         qd = it['quote']; orig = ''
@@ -235,9 +239,12 @@ def REFNAME(ref):
 def finding(f, bot_name, anchor, n):
     t = UI; cp = ''
     if f.get('copy'):
-        kind = f.get('copy_kind')
-        cp = (f'<div class="cp"><div class="k"><span>{E(t["kind"].get(kind or 'other') or t["kind"].get('other', ''))}</span>'
-              f'<button class="copy" type="button">{E(t["copy"])}</button></div><div class="t">{E(T(f["copy"]))}</div></div>')
+        kl = t['kind'].get(f.get('copy_kind') or 'other') or t['kind'].get('other', '')
+        items = f['copy'] if isinstance(f['copy'], list) else [{'text': f['copy']}]
+        cp = ''.join(f'<div class="cp"><div class="k"><span>{E(kl)}'
+                     + (f' <b class="cb">{E(T(x.get("bot")))}</b>' if isinstance(x, dict) and x.get('bot') else '')
+                     + f'</span><button class="copy" type="button">{E(t["copy"])}</button></div>'
+                     f'<div class="t">{E(T(x.get("text") if isinstance(x, dict) else x))}</div></div>' for x in items)
     passive = bool(f.get('see') or f.get('info'))
     ap = '' if passive else (f'<label class="ap"><input type="checkbox" class="apply" '
                              f'data-bot="{E(bot_name)}" data-no="{n}">{E(t["apply"])}</label>')
@@ -251,7 +258,16 @@ def finding(f, bot_name, anchor, n):
             f'<p class="fx"><b>{E(lab)}</b>{E(T(f.get("fix")))}{see}</p>{cp}</div></div>')
 
 def NPROP(b):
-    return sum(1 for f in b['findings'] + b.get('more', []) if not f.get('info'))
+    """Real proposals only: pointers to a shared item ("see") and info items are not counted."""
+    return sum(1 for f in b['findings'] + b.get('more', []) if not f.get('info') and not f.get('see'))
+
+def NSEE(b):
+    return [f['see'] for f in b['findings'] + b.get('more', []) if f.get('see')]
+
+def count_cell(b):
+    see = NSEE(b)
+    extra = f' <a class="sh" href="#{E(see[0])}">{E(UI["n_see"].format(n=len(see)))}</a>' if see else ''
+    return E(UI['n_items'].format(n=NPROP(b))) + extra
 
 def gloss(b):
     g = T(b.get('gloss'))
@@ -268,7 +284,7 @@ def body(d, print_mode=False):
     rows = ''.join(
         f'<tr><td class="n"><a href="#bot-{E(b["id"])}">{E(T(b["name"]))}</a>{gloss(b)}</td>'
         f'<td class="s {cls[b["status"]]}"><span class="mk"></span>{E(t["st"][b["status"]])}</td>'
-        f'<td class="i">{E(T(b["issue"]))}</td><td class="c">{E(t["n_items"].format(n=NPROP(b)))}</td></tr>' for b in bots)
+        f'<td class="i">{E(T(b["issue"]))}</td><td class="c">{count_cell(b)}</td></tr>' for b in bots)
     names = {b['id']: T(b['name']) for b in bots}; names['fleet'] = t['fleet_bot']
     top = ''.join(f'<li><a href="#{E(x["ref"])}">{E(T(x["text"]))}<small>'
                   f'{E(t["topref"].format(bot=names.get(x["ref"].rsplit("-", 1)[0], ""), n=x["ref"].rsplit("-", 1)[-1]))}</small></a></li>'

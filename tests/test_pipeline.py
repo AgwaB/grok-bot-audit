@@ -66,7 +66,10 @@ def main():
             for f in b['findings']:
                 f.pop('needs_review', None)
                 if f.get('topic'): f['copy'] = 'Test rule text (fake).'
-        for f in dr['fleet']: f.pop('needs_review', None)
+        for f in dr['fleet']:
+            f.pop('needs_review', None)
+            if isinstance(f.get('copy'), list):
+                for x in f['copy']: x['text'] = f"Test description for {x['bot']} (fake)."
         dr['fleet'].append(dict(title='Test translated quote', info=True, fix='Nothing to do (test).',
                                 now=[dict(date='03/07', quote=dict(orig=JA_QUOTE, translation='Too long. Make it one line', lang='ja'))]))
         json.dump(dr, open(f'{W}/findings_draft.json', 'w'), ensure_ascii=False)
