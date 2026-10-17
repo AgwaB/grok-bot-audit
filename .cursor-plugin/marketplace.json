@@ -1,0 +1,16 @@
+{
+  "name": "grok-bot-audit",
+  "owner": {
+    "name": "AgwaB"
+  },
+  "metadata": {
+    "description": "Bot Audit: check up on your Grok Bots from their own chat history."
+  },
+  "plugins": [
+    {
+      "name": "bot-audit",
+      "source": ".",
+      "description": "Check up on your Grok Bots from their own chat history and get a plain-language HTML and PDF report with evidence-backed fixes."
+    }
+  ]
+}
