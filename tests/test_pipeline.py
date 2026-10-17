@@ -81,6 +81,8 @@ def main():
         check('<html lang="en"' in h and 'Recipe Helper' in h and 'Too long. Just give me the steps' in h, 'English HTML has bots and verbatim quotes')
         hk = open(f'{W}/report/fleet_report_2030-03-11.ko.html', encoding='utf-8').read()
         check('<html lang="ko"' in hk and '정리 추천' in hk, 'Korean HTML uses Korean labels')
+        check('@font-face' not in h + hk and 'data:font' not in h + hk, 'no embedded fonts (system fonts only)')
+        check('white-space:nowrap' in re.search(r'\.ev \.d\{[^}]*\}', h).group(0), 'evidence dates do not wrap')
         check(not re.search(r'token|subagent|executor|transcript', re.sub(r'<[^>]+>|<!--.*?-->', ' ', h, flags=re.S), re.I), 'no internal jargon in the English report')
         if '--keep' in sys.argv:
             print('kept work dir:', W)

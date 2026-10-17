@@ -5,7 +5,7 @@ Usage:
   python3 make_report.py W/findings.json --outdir W/report                 # English (default)
   python3 make_report.py W/findings.json --outdir W/report --lang ko       # Korean
   python3 make_report.py W/findings.json --outdir W/report --lang all      # both
-  options: --no-pdf, --no-fonts
+  options: --no-pdf
 
 Output: fleet_report_<date>.html/.pdf (en) and fleet_report_<date>.ko.html/.ko.pdf (ko).
 Schema: references/findings-schema.md. Any text field may be a string or {"en": ..., "ko": ...}.
@@ -13,75 +13,14 @@ A quote is {"orig": exact original words, "en": translation?, "ko": translation?
 reader's language and, when that differs from the original, the original underneath in smaller type.
 Design rules: references/design-notes.md.
 
-Fonts: bundled OFL fonts in ../assets/fonts (already subset and renamed "Report Sans/Serif (KR)") are
-subset again to the characters on the page and embedded as WOFF2 when fontTools + brotli are installed;
-otherwise the bundled TTFs are embedded as they are. --no-fonts uses the system font stack.
+Fonts: system fonts only (nothing is embedded). The CSS stacks in CSS below cover macOS/iOS, Windows, Android and Linux;
+the HTML uses the viewer's fonts, the PDF uses whatever fonts the machine that prints it has.
 PDF: headless Chrome/Chromium print-to-pdf with a temporary profile that is removed afterwards.
 """
-import argparse, base64, html, io, json, os, re, shutil, subprocess, sys, tempfile
+import argparse, html, json, os, re, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FONT_DIR = os.path.join(os.path.dirname(HERE), 'assets', 'fonts')
 E = lambda s: html.escape(str(s if s is not None else ''), quote=True)
-
-# ---------- fonts ----------
-FONTS = {  # lang -> [(css family, file, weight)]; all SIL OFL 1.1, subset + renamed (reserved-name rule)
-    'ko': [('Report Sans', 'ReportSansKR-Regular.ttf', 400), ('Report Sans', 'ReportSansKR-SemiBold.ttf', 600),
-           ('Report Serif', 'ReportSerifKR-Regular.ttf', 400)],
-    'en': [('Report Sans', 'ReportSans-Regular.ttf', 400), ('Report Sans', 'ReportSans-SemiBold.ttf', 600),
-           ('Report Serif', 'ReportSerif-Regular.ttf', 400),
-           ('Report Sans KR', 'ReportSansKR-Regular.ttf', 400)],  # Korean names and quoted originals
-}
-
-def font_css(text, lang):
-    try:
-        from fontTools import subset
-        from fontTools.ttLib import TTFont
-        import brotli  # noqa: F401  (needed for woff2)
-    except Exception as e:
-        print('fonts: fontTools/brotli not available (%s); embedding bundled fonts without subsetting' % e, file=sys.stderr)
-        out = []
-        for fam, fn, wt in FONTS[lang]:
-            p = os.path.join(FONT_DIR, fn)
-            if lang == 'en' and fam == 'Report Sans KR' and not re.search(r'[\uac00-\ud7a3]', text):
-                continue
-            if os.path.exists(p):
-                out.append("@font-face{font-family:'%s';font-weight:%d;font-style:normal;font-display:block;"
-                           "src:url(data:font/ttf;base64,%s) format('truetype')}" % (fam, wt, base64.b64encode(open(p, 'rb').read()).decode()))
-        return '\n'.join(out)
-    chars = set(text) | set(map(chr, range(0x20, 0x7f))) | set('“”‘’…·→–—■□✓')
-    out = []
-    for fam, fn, wt in FONTS[lang]:
-        p = os.path.join(FONT_DIR, fn)
-        if not os.path.exists(p):
-            print('fonts: missing', p, file=sys.stderr); return ''
-        opt = subset.Options(); opt.flavor = 'woff2'; opt.name_IDs = ['*']; opt.layout_features = ['*']
-        opt.name_languages = ['*']; opt.notdef_outline = True
-        txt = ''.join(chars)
-        if lang == 'en' and fam == 'Report Sans KR':
-            txt = ''.join(c for c in chars if ord(c) >= 0x1100) + ''.join(map(chr, range(0x20, 0x7f)))
-        elif lang == 'en':
-            txt = ''.join(c for c in chars if ord(c) < 0x1100)
-        f = TTFont(p); s = subset.Subsetter(opt); s.populate(text=txt); s.subset(f)
-        for rec in f['name'].names:  # OFL: modified versions must not use the reserved font name
-            if rec.nameID in (1, 4, 16, 21):
-                rec.string = fam + (' SemiBold' if wt == 600 and rec.nameID == 4 else '')
-            elif rec.nameID == 17:
-                rec.string = 'SemiBold' if wt == 600 else 'Regular'
-            elif rec.nameID in (3, 6, 20):
-                rec.string = fam.replace(' ', '') + '-' + str(wt)
-        b = io.BytesIO(); f.flavor = 'woff2'; f.save(b)
-        out.append("@font-face{font-family:'%s';font-weight:%d;font-style:normal;font-display:block;"
-                   "src:url(data:font/woff2;base64,%s) format('woff2')}" % (fam, wt, base64.b64encode(b.getvalue()).decode()))
-    return '\n'.join(out)
-
-LICENSE_NOTE = """<!--
-Embedded fonts (subset and renamed 'Report Sans' / 'Report Serif' / 'Report Sans KR' / 'Report Serif KR'), licensed under the
-SIL Open Font License 1.1 (https://openfontlicense.org). Full license text is kept in each font's metadata (name ID 13/14).
-- IBM Plex Sans, IBM Plex Sans KR: Copyright © 2017 IBM Corp. with Reserved Font Name "Plex".
-- Newsreader: Copyright 2020 The Newsreader Project Authors (https://github.com/productiontype/Newsreader).
-- Gowun Batang: Copyright 2021 The Gowun Batang Project Authors (https://github.com/yangheeryu/Gowun-Batang).
--->"""
 
 # ---------- strings ----------
 STR = {
@@ -97,7 +36,7 @@ STR = {
             lede_y='Checked {n} bots. {y} need work.', lede_r='Checked {n} bots. {r} should be cleaned up.',
             sel_none='Tick the items you want to apply', sel_n='{n} selected', go='Copy selection', sel_prefix='Apply: ',
             pick_first='Tick the items to apply first', copied_msg='Copied: ', copy_fail="Couldn't copy. Please select the text and copy it.",
-            footer='Built from the {date} audit. Quotes are taken word for word from the chats; translated quotes show the original below. Fonts based on IBM Plex Sans, Newsreader, IBM Plex Sans KR and Gowun Batang (SIL Open Font License).',
+            footer='Built from the {date} audit. Quotes are taken word for word from the chats; translated quotes show the original below.',
             date=lambda d: f"{['January','February','March','April','May','June','July','August','September','October','November','December'][int(d[5:7])-1]} {int(d[8:10])}, {d[:4]}"),
  'ko': dict(when='{date} 점검', glance='한눈에 보기', th=('봇', '상태', '지금 문제', '제안'),
             n_items='{n}건', top='먼저 할 3가지', topref='{bot} {n}번 항목', bybot='봇별 자세히', fleet='봇 전체에서 보이는 것',
@@ -111,7 +50,7 @@ STR = {
             lede_y='봇 {n}개를 살펴봤어요. {y}개는 손볼 곳이 있어요.', lede_r='봇 {n}개를 살펴봤어요. {r}개는 정리를 추천해요.',
             sel_none='적용할 항목을 체크해 주세요', sel_n='{n}개 항목을 골랐어요', go='선택한 항목 복사', sel_prefix='적용: ',
             pick_first='먼저 적용할 항목을 체크해 주세요', copied_msg='복사했어요: ', copy_fail='복사하지 못했어요. 글을 직접 선택해 복사해 주세요',
-            footer='{date} 점검 기록에서 만든 리포트예요. 인용은 실제 대화에서 그대로 가져왔어요. 번역한 인용은 원문을 아래에 함께 보여 줘요. 글꼴: IBM Plex Sans KR, 고운바탕 기반 (SIL Open Font License).',
+            footer='{date} 점검 기록에서 만든 리포트예요. 인용은 실제 대화에서 그대로 가져왔어요. 번역한 인용은 원문을 아래에 함께 보여 줘요.',
             date=lambda d: f'{int(d[5:7])}월 {int(d[8:10])}일'),
 }
 KIND_ALIAS = {'설명': 'description', '메모리': 'memory'}
@@ -127,8 +66,12 @@ def T(x, lang=None):
 CSS = r"""
 :root{--paper:#FCFCFA;--ink:#1E2226;--sub:#5F666D;--faint:#8A9097;--rule:#DCDDD8;--tint:#F1F2EE;
 --acc:#1F5A54;--r:#A23B2A;--y:#8C5D00;--g:#3F6B47;
---sans:'Report Sans','Report Sans KR','IBM Plex Sans','IBM Plex Sans KR','Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
---serif:'Report Serif','Report Sans KR','Newsreader','Gowun Batang','Noto Serif KR','AppleMyungjo',serif}
+--kr-sans:'Apple SD Gothic Neo',Pretendard,'Malgun Gothic','Noto Sans KR','Noto Sans CJK KR',NanumGothic;
+--kr-serif:'Noto Serif KR','Noto Serif CJK KR',AppleMyungjo,'Nanum Myeongjo',NanumMyeongjo,Batang;
+--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,var(--kr-sans),sans-serif;
+--serif:'Iowan Old Style',Charter,'Bitstream Charter','Sitka Text',Cambria,Georgia,'Noto Serif',var(--kr-serif),serif}
+:root:lang(ko){--sans:-apple-system,BlinkMacSystemFont,var(--kr-sans),'Segoe UI',Roboto,Arial,sans-serif;
+--serif:var(--kr-serif),'Iowan Old Style',Charter,Georgia,serif}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--paper);color:var(--ink);font:400 15.5px/1.7 var(--sans);word-break:keep-all;overflow-wrap:anywhere}
 .page{max-width:820px;margin:0 auto;padding:56px 28px 140px}
@@ -172,8 +115,8 @@ details.bot[open]>summary .tog .c,details.bot:not([open])>summary .tog .o{displa
 .f .hd{display:flex;gap:16px;justify-content:space-between;align-items:baseline}
 .f h4{font:600 17px/1.45 var(--sans);margin:0}
 .ev{margin:10px 0 0;padding:0;list-style:none}
-.ev li{display:grid;grid-template-columns:76px 1fr;gap:10px;padding:2px 0}
-.ev .d{color:var(--faint);font-size:13.5px;font-variant-numeric:tabular-nums;padding-top:2px}
+.ev{display:grid;grid-template-columns:minmax(76px,max-content) 1fr;column-gap:12px}.ev li{display:contents}.ev li>span{padding:2px 0}
+.ev .d{color:var(--faint);font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap;padding-top:4px}
 .ev q{font-family:var(--serif);font-size:16.5px;quotes:none}
 .ev .who{color:var(--sub);font-size:13.5px;margin-right:4px}
 .ev .orig{display:block;color:var(--sub);font:400 13.5px/1.55 var(--sans);margin-top:1px}
@@ -215,7 +158,7 @@ button.go:hover{background:var(--acc)}
  table.st tbody tr:first-child{border-top:0} table.st tr{padding:10px 0;display:grid;grid-template-columns:1fr auto}
  table.st td{border:0;padding:0}table.st td.i{grid-column:1/-1;color:var(--sub);font-size:14.5px}table.st td.c{display:none}
  .f{grid-template-columns:28px 1fr}.f .hd{flex-direction:column;gap:4px}
- .ev li{grid-template-columns:1fr;gap:0}.ev .d{padding:0}
+ .ev{display:block}.ev li{display:block;padding:2px 0}.ev li>span{display:block;padding:0}
  details.bot>summary h3{font-size:23px}.bar .in{padding:10px 18px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -367,14 +310,14 @@ def body(d, print_mode=False):
 <footer>{E(t['footer'].format(date=d['date']))}</footer>
 </div>"""
 
-def page(d, fonts_css, print_mode=False):
+def page(d, print_mode=False):
     t = STR[LANG]
     bar = '' if print_mode else (f'<div class="bar"><div class="in"><span id="cnt"></span>'
                                  f'<button class="go" type="button" onclick="copySel()">{E(t["go"])}</button></div></div><div id="msg" role="status"></div>')
     js_s = json.dumps({k: t[k] for k in ('copy', 'copied', 'sel_none', 'sel_n', 'sel_prefix', 'pick_first', 'copied_msg', 'copy_fail')}, ensure_ascii=False)
     js = '' if print_mode else '<script>' + JS_TPL.replace('__S__', js_s) + '</script>'
     return (f'<!doctype html><html lang="{LANG}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>{E(T(d["title"]))} ({E(d["date"][5:7].lstrip("0"))}/{E(d["date"][8:10].lstrip("0"))})</title>{LICENSE_NOTE}<style>{fonts_css}\n{CSS}</style></head>'
+            f'<title>{E(T(d["title"]))} ({E(d["date"][5:7].lstrip("0"))}/{E(d["date"][8:10].lstrip("0"))})</title><style>{CSS}</style></head>'
             f'<body>{body(d, print_mode)}{bar}{js}</body></html>')
 
 def chrome():
@@ -394,16 +337,14 @@ def to_pdf(html_path, pdf_path):
     finally:
         shutil.rmtree(prof, ignore_errors=True)
 
-def build(d, lang, outdir, pdf=True, fonts=True):
+def build(d, lang, outdir, pdf=True):
     global LANG
     LANG = lang
     base = os.path.join(outdir, f'fleet_report_{d["date"]}' + ('' if lang == 'en' else f'.{lang}'))
-    probe = page(d, '') + page(d, '', True)
-    fcss = font_css(re.sub(r'<[^>]+>', '', html.unescape(probe)), lang) if fonts else ''
-    open(base + '.html', 'w', encoding='utf-8').write(page(d, fcss)); print('wrote', base + '.html')
+    open(base + '.html', 'w', encoding='utf-8').write(page(d)); print('wrote', base + '.html')
     if pdf:
         tmp = base + '.print.html'
-        open(tmp, 'w', encoding='utf-8').write(page(d, fcss, print_mode=True))
+        open(tmp, 'w', encoding='utf-8').write(page(d, print_mode=True))
         ok = to_pdf(tmp, base + '.pdf'); os.remove(tmp)
         print('wrote', base + '.pdf' if ok else 'PDF FAILED')
 
@@ -411,12 +352,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('findings'); ap.add_argument('--outdir', default='report')
     ap.add_argument('--lang', choices=['en', 'ko', 'all'], default='en')
-    ap.add_argument('--no-pdf', action='store_true'); ap.add_argument('--no-fonts', action='store_true')
+    ap.add_argument('--no-pdf', action='store_true')
     a = ap.parse_args()
     d = json.load(open(a.findings, encoding='utf-8'))
     os.makedirs(a.outdir, exist_ok=True)
     for lang in (['en', 'ko'] if a.lang == 'all' else [a.lang]):
-        build(d, lang, a.outdir, pdf=not a.no_pdf, fonts=not a.no_fonts)
+        build(d, lang, a.outdir, pdf=not a.no_pdf)
 
 if __name__ == '__main__':
     main()

@@ -29,7 +29,11 @@ not like a generated landing page. `make_report.py` already follows these rules;
 - When nothing qualifies, say "Nothing major to fix."
 
 ## Fonts
-Bundled in `assets/fonts` under the SIL Open Font License 1.1, already subset (Latin + common Hangul) and renamed, because
-IBM Plex has the Reserved Font Name "Plex" and modified versions must use another name:
-Report Sans (IBM Plex Sans), Report Serif (Newsreader), Report Sans KR (IBM Plex Sans KR), Report Serif KR (Gowun Batang).
-The license texts sit next to the files and inside each font's name table. Rare characters outside the subset fall back to system fonts.
+System fonts only; nothing is bundled or embedded. Two stacks, defined once in `make_report.py`:
+- Sans (body): system UI fonts for Latin (`-apple-system`, `Segoe UI`, Roboto, Helvetica Neue, Arial), then Korean:
+  Apple SD Gothic Neo, Pretendard, Malgun Gothic, Noto Sans KR / Noto Sans CJK KR, NanumGothic, `sans-serif`.
+  On Korean pages the Korean fonts come before Segoe UI and Roboto.
+- Serif (headings, quotes): Iowan Old Style, Charter, Sitka Text, Cambria, Georgia, Noto Serif, then Noto Serif KR /
+  Noto Serif CJK KR, AppleMyungjo, Nanum Myeongjo, Batang, `serif`. On Korean pages the Korean serifs come first.
+The HTML uses the reader's fonts, so it can look slightly different per device. The PDF embeds whatever the printing
+machine has.

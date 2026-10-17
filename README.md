@@ -41,8 +41,10 @@ Then ask your bot something like "audit my bots" or "which of my bots do I actua
 
 Requirements on the machine running the bot:
 - `python3` (standard library only);
-- Chrome or Chromium for the PDF;
-- optional: `fontTools` and `brotli` for smaller files.
+- Chrome or Chromium for the PDF.
+
+The report uses system fonts only, nothing is embedded. The HTML shows in the reader's own fonts (Apple SD Gothic Neo on Mac and
+iPhone, Malgun Gothic on Windows, Noto on Android and Linux, Pretendard if installed); the PDF uses the fonts of the machine that made it.
 
 ## Components
 | path | what |
@@ -54,10 +56,8 @@ Requirements on the machine running the bot:
 | `skills/audit-my-bots/scripts/build_findings.py` | `skeleton`: a draft findings file with verbatim evidence; `finalize`: checks quotes word for word, scores, caps 3 per bot, picks the top 3 |
 | `skills/audit-my-bots/scripts/make_report.py` | renders the HTML and PDF (headless Chrome, temporary profile) |
 | `skills/audit-my-bots/references/` | correction rubric, criteria, findings schema, design notes |
-| `skills/audit-my-bots/assets/fonts/` | OFL fonts (subset and renamed) with their licenses |
 | `assets/` | plugin logo |
 | `tests/` | synthetic fixture (fake bots, fake chats) and an offline end-to-end test |
-| `tools/presubset_fonts.py` | maintainer script that produced the bundled fonts |
 
 ## Privacy and safety
 - Read-only on bot data. Only `profile.json` (name and description) and the history the bot fetches are read.
@@ -74,4 +74,4 @@ languages' HTML and PDF are produced. It also checks statuses, the outage, the r
 invented quote is rejected.
 
 ## License
-MIT for the code (see `LICENSE`). Fonts: SIL Open Font License 1.1 (see `skills/audit-my-bots/assets/fonts/`).
+MIT (see `LICENSE`).

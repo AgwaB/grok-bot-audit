@@ -23,7 +23,7 @@ the proposals they pick. Nothing changes without their pick.
 - No rules from one-off mistakes. If nothing qualifies, say "Nothing major to fix."
 
 ## 0. Set up
-`$SKILL` is the folder that holds this `SKILL.md`; `scripts/`, `references/` and `assets/` sit next to it.
+`$SKILL` is the folder that holds this `SKILL.md`; `scripts/` and `references/` sit next to it.
 If you don't know that folder, the fallback below finds the newest installed copy.
 ```bash
 SKILL="<folder that holds this SKILL.md>"
@@ -33,7 +33,7 @@ W="/workspace/bot-audit-run/$(date +%F)"; mkdir -p "$W"; echo "$SKILL" "$W"
 ```
 Marketplace installs are cached under `/home/box/agent-data/plugins/cache/<marketplace>/bot-audit/<commit>/`;
 local copies live under `~/.cursor/plugins/local/bot-audit/`.
-Needs `python3`. The PDF needs Chrome or Chromium. `fontTools` and `brotli` are optional (smaller files).
+Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts; nothing else to install.
 Report language: English by default. Use Korean (`--lang ko`) if the user asks, or `--lang all` for both.
 
 ## 1. List the bots
