@@ -295,7 +295,8 @@ def NSEE(b):
 def count_cell(b):
     see = NSEE(b)
     extra = f' <a class="sh" href="#{E(see[0])}">{E(UI["n_see"].format(n=len(see)))}</a>' if see else ''
-    return E(UI['n_items'].format(n=NPROP(b))) + extra
+    n = NPROP(b)   # no proposals: no "0", just a dash (or only the shared-item link)
+    return (E(UI['n_items'].format(n=n)) if n else '' if see else '\u2013') + extra
 
 def gloss(b):
     g = T(b.get('gloss'))

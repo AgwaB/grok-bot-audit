@@ -132,7 +132,7 @@ def skeleton(a):
                          else 'Some requests went unanswered.',
                'green': 'No repeated problem.'}[b['status_suggested']]
         if b['status_suggested'] == 'red':
-            findings = [dict(title='Barely used', cleanup=True, now=[dict(date='', text=f"Last request {md(b['last_request'])}")],
+            findings = [dict(title='Barely used', cleanup=True, short=f"Show me how to clean up {b['name']}", now=[dict(date='', text=f"Last request {md(b['last_request'])}")],
                              fix='Consider cleaning it up, or moving its job to a bot you use. How: see the keep / clean-up item.',
                              needs_review=True, score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='idle; small share'))] + findings
         own = [w for w in b['waits'] if not w['fleet_outage'] and w['texts']]
@@ -152,7 +152,7 @@ def skeleton(a):
                           score=dict(impact=impact_from(0, bots=len(empty)), confidence='medium', effort=1, reversibility=1.0, basis=f'{len(empty)} bots')))
     for o in diag['fleet']['outages']:
         fleet.append(dict(title='Several bots stopped answering at the same time',
-                          now=[dict(date=md(w['first']), who=diag['bots'][w['bot']]['name'], quote={'orig': pick_quote(w['texts'][0])})
+                          now=[dict(date=md(w['first']), chat=diag['bots'][w['bot']]['name'], quote={'orig': pick_quote(w['texts'][0])})
                                for w in o['waits'][:4] if w['texts']],
                           fix='It happened once, so nothing to change. The next audit will flag it if it happens again.',
                           info=True))

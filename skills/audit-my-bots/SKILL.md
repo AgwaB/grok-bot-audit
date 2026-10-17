@@ -40,8 +40,8 @@ the proposals they pick. Nothing changes without their pick.
 
 ## 0. Set up
 `$SKILL` is the folder that holds this `SKILL.md`. If you were given `SKILL` or `W`, keep them. Shell variables don't
-survive between separate commands, so write them to `$W/env.sh` once and start every later command with
-`source <the real path of $W>/env.sh &&`.
+survive between separate commands, so the block below writes them to `$W/env.sh` and prints its full path. Start every
+later command with `source <that printed path> &&`, the literal path (`$W` is not set yet in a new command).
 ```bash
 SKILL="${SKILL:-<folder that holds this SKILL.md>}"
 [ -f "$SKILL/scripts/sessions.py" ] || SKILL="$(dirname "$(dirname "$(find /home/box/agent-data/plugins ~/.cursor/plugins \
@@ -52,9 +52,9 @@ printf 'export SKILL=%q W=%q AUDIT_REPLAY_DIR=%q\n' "$SKILL" "$W" "${AUDIT_REPLA
 ```
 Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts; nothing else to install.
 
-**Test mode** (`$AUDIT_REPLAY_DIR` set): run `replay` (step 1), then `parse` (end of step 2); no listing or fetching.
-Report dates (`date`, lede, footer) use the replay's `now`; the weekly offer (step 9) uses the user's real time zone
-from your context, never the replay timeline's UTC offset; evidence dates stay as recorded.
+**Test mode** (`$AUDIT_REPLAY_DIR` set): if asked for a `commands.log`, log every command from the first (above) on.
+Run `replay` (step 1), then `parse` (end of step 2); no fetching. Report dates (`date`, lede, footer) use the
+replay's `now`; the weekly offer and routine times use the user's real time zone, never the replay's UTC offset; evidence dates stay as recorded.
 
 ## 1. List the bots
 ```bash
@@ -115,7 +115,8 @@ Read `$SKILL/references/criteria.md`, `findings-schema.md` and `writing.md`, the
 - **Groups and status:** follow the decision procedure in `criteria.md` §5 step by step (shared cause and its paste
   test, merging, normal iteration, status). Resolve each `fix_check` as `writing.md` says. Set `issue` and `why` for every bot.
 - **Words:** replace every placeholder and `TODO` (titles, fixes, `copy`, `issue`, `why`, `ui` labels, `date_label`) with
-  plain wording in the user's language. `copy` goes into that bot, so write it in the language the user uses with that bot.
+  plain wording in the user's language; a `fix` says what the user can do or what is applied if they pick it. `copy`
+  goes into that bot: write it in the language the user uses with that bot (routine text: `writing.md`).
 - **Quotes:** word for word in `quote.orig`; add `translation` when the chat's language differs from the report's.
 - **Leads:** check `leads` (stale memory, promises, skipped questions, the same request in several bots, other bots' jobs)
   and any safety event you saw in the chats. Add an item only for what you confirm by reading (`writing.md`).
@@ -152,15 +153,15 @@ Send one message:
 Skip to the weekly offer if there are no proposals. Otherwise ask one multi-select question, in the user's language:
 - Options: the top 3 first, then the other proposals in report order (bot sections, then the fleet); one option per
   finding, labelled with its `short` line or title (a fleet item with text for several bots is one option). A clean-up
-  bot gets exactly one option, "Show me how to clean up X", at its top-3 place or else at its place in report order;
-  its findings fold into it. Last: "None for now". `see` pointers and info items aren't options. Every option, these
-  fixed ones too, is written in the user's language (`writing.md`, "Chat message").
+  bot gets exactly one option, its clean-up finding's `short` line ("Show me how to clean up X"), at its top-3 place or
+  else at its bot's place in the bot sections; its findings fold into it. Last: "None for now". `see` pointers and info
+  items (the fleet keep / clean-up item too) aren't options. Every option is in the user's language (`writing.md`).
 - Never label an option "Remove X", "Delete X" or "Merge X": you can't do those.
 
 Apply **only** what the user picks:
 - **Memory or description text for another bot:** give the exact text and say where it goes (that bot's settings, or a message to that bot). Use a tool that changes another bot only if you have one and the user picked that item.
 - **Your own memory:** save it.
-- **Routines:** create one only if the user picked it. Say what it will do and when.
+- **Routines:** create one only if the user picked it. Say what it will do and when (the user's real time zone).
 - **"Show me how to clean up X":** first ask the user to open X in the app and check whether any routine uses it; if one does,
   move or pause that routine first. Then explain the steps: to delete X, right-click X in the sidebar and choose Delete
   (deleting removes its profile, chat and routines; Hide from sidebar keeps them). To merge, give the text to paste into the

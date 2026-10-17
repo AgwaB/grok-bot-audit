@@ -51,6 +51,23 @@ def script_share(text, lang):
     hit = sum(1 for c in letters if unicodedata.name(c, '').split(' ')[0] in want)
     return hit / len(letters)
 
+def chat_prose(chat, names=()):
+    """The chat text a language check should measure: drops test-harness headings ("# Step 8: ..."), attachment and
+    file-path lines, code spans, markdown table rules and pipes, and bot names (they keep their own script)."""
+    keep = []
+    for line in chat.splitlines():
+        s = line.strip()
+        if re.match(r'#{1,6}\s', s) or re.match(r'^\|?\s*:?-{3,}', s): continue
+        if re.match(r'^\W*(attachments?|attached|files?)\s*:', s, re.I): continue
+        keep.append(line)
+    t = '\n'.join(keep)
+    t = re.sub(r'```.*?```|`[^`\n]*`', ' ', t, flags=re.S)
+    t = re.sub(r'(?:[A-Za-z]:)?(?:[\w.~$-]*/)+[\w.-]+|\b[\w-]+\.(?:pdf|html?|png|md|json|txt|csv)\b', ' ', t)
+    t = t.replace('|', ' ')
+    for n in sorted({n for n in names if n}, key=len, reverse=True):
+        t = t.replace(n, ' ')
+    return t
+
 def findings_iter(d):
     for b in d.get('bots', []):
         for f in b.get('findings', []) + b.get('more', []): yield b, f
@@ -129,7 +146,7 @@ def main():
         same = [v for k, v in UI_DEFAULT.items() for v in flat(v) if re.search('[A-Za-z]{3}', str(v)) and str(v) in [str(x) for x in flat(ui.get(k, v))]]
         check('report labels are translated (few English fallbacks left)', len(same) <= 3, same[:8] or 'translated')
         if chat:
-            cs = script_share(chat, lang)
+            cs = script_share(chat_prose(chat, [b.get('name', '') for b in bots]), lang)
             check(f'chat summary is written in {lang}', cs is None or cs >= 0.5, f'{cs:.2f}' if cs is not None else 'n/a')
     # ---- options and labels
     opts = [l.strip(' -*\t0123456789.)[]') for l in chat.splitlines() if re.match(r'^\s*([-*]|\d+[.)]|\[ ?\])\s+', l)]
@@ -140,11 +157,13 @@ def main():
     # ---- structure
     over = [b['name'] for b in d.get('bots', []) if len([f for f in b.get('findings', []) if f.get('score') and not f.get('see') and not f.get('info')]) > 3]
     check('at most 3 proposals per bot', not over, over or 'ok')
-    rows = dict(re.findall(r'<tr><td class="n"><a href="#bot-([^"]+)">.*?<td class="c">(\d+)', h))
+    # a bot with no proposals shows no number (a dash or only the shared-item link): that counts as 0
+    rows = {k: int((re.match(r'\s*(\d+)', v) or [0, 0])[1]) for k, v in
+            re.findall(r'<tr><td class="n"><a href="#bot-([^"]+)">.*?<td class="c">(.*?)</td>', h)}
     wrong = []
     for b in d.get('bots', []):
         real = sum(1 for f in b.get('findings', []) + b.get('more', []) if not f.get('see') and not f.get('info'))
-        if b['id'] in rows and int(rows[b['id']]) != real: wrong.append(f"{b['name']}: {rows[b['id']]} vs {real}")
+        if b['id'] in rows and rows[b['id']] != real: wrong.append(f"{b['name']}: {rows[b['id']]} vs {real}")
     check('Proposals counts exclude pointers and info items', h and not wrong, wrong or 'ok')
     check('no empty sections (e.g. an empty top 3)', h and not re.search(r'<ol class="top">\s*</ol>|<ul class="ev">\s*</ul>\s*<p class="fx"><b>[^<]*</b>\s*</p>', h), 'ok')
     if chat:

@@ -61,3 +61,12 @@
   doesn't talk about deleting. Evidence with no dates has no blank date column.
 - One test-mode note (replay then parse; report dates from the replay, the weekly offer in the user's real time zone);
   the weekly re-check is a yes/no choice; `--lang` falls back to English; rewrite the used `ui.lede_*` before finalize.
+- Outage item: user quotes from other bots' chats are marked with `chat` (shown as "You (in X)"), not `who`.
+- A bot with no proposals shows a dash in the status table instead of "0"; `fleet_note` is optional and normally empty.
+- The clean-up finding carries a `short` line ("Show me how to clean up X", rewritten in the user's language): it is
+  both its top-3 line and its one option, placed among the bot sections, never with the fleet items.
+- Writing: fixes say what the user can do or what is applied when they pick it; routine text is in the user's report
+  language and routine times use the user's real time zone. Step 0: source `env.sh` by its printed path; in tests,
+  log commands from the first one.
+- Eval grader: the chat-language check measures prose only (bot names, tables, code spans, paths, attachment lines and
+  test headings are left out); a dash in the Proposals column counts as 0.

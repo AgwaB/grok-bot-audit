@@ -91,7 +91,9 @@ The scripts fix the structure; every word the reader sees comes from this file, 
 
 ## Counts and pointers
 The status table counts real proposals per bot. A pointer (`see`) to a shared fleet item is not counted; the table shows
-it as a separate small link (`ui.n_see`). Info items are not counted either.
+it as a separate small link (`ui.n_see`). Info items are not counted either. `ui.n_items` (`{n}`) formats the count
+only when it is 1 or more: a bot with no proposals shows no "0", just a dash (or only the `n_see` link when it has a
+pointer), so `n_items` never needs a zero form.
 
 ## UI labels (`ui`)
 Keys and English defaults are in `UI_DEFAULT` in `scripts/make_report.py`: section titles (`glance`, `top`, `bybot`, `fleet`),
@@ -104,7 +106,9 @@ needs; you may write the numbers in instead of `{n}`, `{y}`, `{r}`). The English
 and `footer_tr` only when a translated quote exists. `expand` (`{n}` = proposals, as in the table) labels a collapsed
 section; `expand_info` replaces it when the section has no proposals. `in_chat` labels a user quote from another bot's
 chat (`{bot}`); `who_bot` labels a quote with `"who": "bot"` (`{bot}`); `too_early` tags a finding with
-`"too_early": true`.
+`"too_early": true`. `fleet_note` (default `""`) is an optional sentence shown above the fleet items; leave it empty
+unless something about the fleet as a whole is worth saying that no fleet item says. Empty shows nothing and needs no
+translation.
 
 ## Rules finalize enforces
 - `status` is one of green / yellow / red.
