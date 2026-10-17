@@ -14,7 +14,7 @@ BOTS = {
  'aaaaaaaa-0000-4000-8000-000000000001': dict(name='Recipe Helper', description='Suggests easy weeknight recipes. Fake test bot.'),
  'aaaaaaaa-0000-4000-8000-000000000002': dict(name='Trip Planner', description=''),
  'aaaaaaaa-0000-4000-8000-000000000003': dict(name='Old Notes', description=''),
- 'aaaaaaaa-0000-4000-8000-000000000004': dict(name='메모봇', description=''),
+ 'aaaaaaaa-0000-4000-8000-000000000004': dict(name='メモボット', description=''),
  'aaaaaaaa-0000-4000-8000-0000000000ff': dict(name='Auditor (self)', description='The bot running the audit. Fake.'),
 }
 
@@ -97,16 +97,16 @@ O = convo([
  (0, 12, 0, 'u', 'Save a note: buy fake milk'),
  (0, 12, 1, 'b', 'Saved. [fake text]'),
 ])
-K = convo([
- (4, 21, 0, 'u', '가짜 테스트 메모 하나 저장해줘'),
- (4, 21, 1, 'b', '저장했어요. [가짜 텍스트]'),
- (4, 23, 0, 'u', '아까 메모 다시 보여줘'),
- (5, 10, 0, 'u', '확인?'),
- (5, 10, 1, 'b', '늦어서 죄송해요. 메모: 가짜 테스트 메모 [가짜 텍스트]'),
- (6, 9, 0, 'u', '메모 요약해줘'),
- (6, 9, 1, 'b', '아주 긴 요약입니다. 배경 설명과 역사까지 포함했어요. [가짜 텍스트]'),
- (6, 9, 2, 'u', '너무 길어. 한 줄로 해줘'),
- (6, 9, 3, 'b', '한 줄 요약: 가짜 메모 [가짜 텍스트]'),
+K = convo([   # the one non-English bot (Japanese), to test non-Latin chats
+ (4, 21, 0, 'u', 'テスト用の偽メモを保存して'),
+ (4, 21, 1, 'b', '保存しました。[偽テキスト]'),
+ (4, 23, 0, 'u', 'さっきのメモをもう一度見せて'),
+ (5, 10, 0, 'u', '確認?'),
+ (5, 10, 1, 'b', '遅れてすみません。メモ: 偽のテストメモ [偽テキスト]'),
+ (6, 9, 0, 'u', 'メモを要約して'),
+ (6, 9, 1, 'b', 'とても長い要約です。背景と歴史まで含めました。[偽テキスト]'),
+ (6, 9, 2, 'u', '長すぎる。一行にして'),
+ (6, 9, 3, 'b', '一行要約: 偽メモ [偽テキスト]'),
 ])
 CONVOS = {'aaaaaaaa-0000-4000-8000-000000000001': R, 'aaaaaaaa-0000-4000-8000-000000000002': T,
           'aaaaaaaa-0000-4000-8000-000000000003': O, 'aaaaaaaa-0000-4000-8000-000000000004': K}
@@ -137,7 +137,9 @@ if __name__ == '__main__':
      "That's not what I asked, I meant a hostel": dict(label=True, type='correction', topic='misread_intent', confidence='high', evidence='"I meant a hostel"'),
      'No, I meant dinner, not lunch': dict(label=True, type='correction', topic='misread_intent', confidence='high', evidence='"I meant dinner"'),
      'You said 9:00 but I asked for an evening train, I meant evening': dict(label=True, type='correction', topic='misread_intent', confidence='high', evidence='"I meant evening"'),
-     '너무 길어. 한 줄로 해줘': dict(label=True, type='correction', topic='format_length', confidence='high', evidence='"너무 길어"'),
+     '長すぎる。一行にして': dict(label=True, type='correction', topic='format_length', confidence='high', evidence='"長すぎる"'),
     }
     json.dump(labels, open(os.path.join(FX, 'labels_by_text.json'), 'w'), ensure_ascii=False, indent=1)
+    cues = dict(directive=['長すぎ', 'じゃなくて', 'もう一度'], fix=['今後は'], promise=['お知らせします'], nudge=['^確認'], timely=['現在'])
+    json.dump(cues, open(os.path.join(FX, 'cues_ja.json'), 'w'), ensure_ascii=False, indent=1)
     print('fixture written to', FX)

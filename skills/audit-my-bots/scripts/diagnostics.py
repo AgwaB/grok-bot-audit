@@ -10,16 +10,10 @@ Fields marked "candidates" are leads for the host bot to read and confirm, not f
 """
 import argparse, collections, datetime as dt, glob, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import dump_json, grams, jaccard, load_json, norm
+from common import dump_json, grams, jaccard, load_cues, load_json, norm
 
 FMT = '%Y-%m-%d %H:%M'
 P = lambda s: dt.datetime.strptime(s, FMT)
-FIX = re.compile(r"(앞으로|저장해\s*(뒀|두었|둘)|기억해\s*(둘|뒀)|지침을|가이드에|규칙에|메모리|from now on|i'?ll remember|"
-                 r"i'?ve (saved|updated|noted)|saved (that|this|it)|updated my (instructions|notes|guide|rules)|going forward)", re.I)
-PROMISE = re.compile(r"(알려\s*드릴게|알려줄게|보내\s*드릴게|보낼게|정리되면|끝나면|찾고\s*있어|하는\s*중|조금\s*걸려|"
-                     r"i'?ll (let you know|send|get back|report back|follow up)|working on it|give me a (moment|minute)|in progress)", re.I)
-NUDGE = re.compile(r'^(hi|hello|hey|안녕|하이|\?+|ㅎㅇ|확인|있어\?|살아있|any update|update\?|status\?)', re.I)
-TIMELY = re.compile(r'\b(currently|now|at the moment|as of)\b|지금|현재', re.I)
 INCIDENT_MIN = 60
 WAIT_H = 6
 
@@ -30,6 +24,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--work', required=True); ap.add_argument('--now')
     a = ap.parse_args()
+    cues, _ = load_cues(a.work); FIX, PROMISE, NUDGE, TIMELY = cues['fix'], cues['promise'], cues['nudge'], cues['timely']
     bots = {b['id']: b for b in load_json(os.path.join(a.work, 'bots.json'), [])}
     labels = load_json(os.path.join(a.work, 'labels.json'), {})
     jin = {x['key']: x for x in load_json(os.path.join(a.work, 'judge_inputs.json'), [])}

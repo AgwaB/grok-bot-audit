@@ -36,7 +36,7 @@ next_bot: the bot's reply after it (may be empty if it never answered)
 
 ## Decision steps (stop at the first that applies)
 1. Is the user answering a question the bot asked, or choosing among options it offered? → `clarification`.
-2. Does the user say or clearly imply the bot got something wrong? Look for criticism words (too, not, wrong, again / 너무, 별로, 아니), "instead of X" or "not X" plus a reason, "I meant / I asked for", "already did that", or counter-evidence ("it has 3,000 stars though?"). → `correction`.
+2. Does the user say or clearly imply the bot got something wrong? Look for criticism words (too, not, wrong, again, or the same words in the chat's language), "instead of X" or "not X" plus a reason, "I meant / I asked for", "already did that", or counter-evidence ("it has 3,000 stars though?"). → `correction`.
 3. Is it a challenge phrased as a question ("really? none of it works?", "is that all?", "did you actually check?")? → `correction` **only if** it states the bot is wrong, or `next_bot` admits an error or a gap ("I was wrong", "I made that too strict", "probably not all"). Otherwise → `question`.
 4. Does the user reject an item with no reason? → `topic_rejection`.
 5. Does the user ask to change the last output (shorter, simpler, another style) without criticism? → `new_request`.
@@ -72,7 +72,7 @@ Corrections (label true):
 - prev: a list of topics · user: "I already wrote about the second one. Another." → correction / repeated_content / high
 - prev: a summary · user: "It has 3,000 stars though?" · next: "You're right, I misread it." → correction / accuracy_sources / high
 - prev: hotel options · user: "That's not what I asked, I meant a hostel" → correction / misread_intent / high
-- prev: a long summary · user: "너무 길어. 한 줄로 해줘" → correction / format_length / high
+- prev: a long summary · user: "Demasiado largo. En una línea, por favor" → correction / format_length / high
 - prev: paid tools · user: "Not paid APIs, set up something free" → correction / method_choice / medium
 
 Not corrections (label false):

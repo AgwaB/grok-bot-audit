@@ -2,7 +2,6 @@
 import datetime as dt, glob, hashlib, json, os, re
 
 AGENTS_DIR = os.environ.get('BOT_AUDIT_AGENTS_DIR', '/home/box/agent-data/agents')
-HANGUL = re.compile(r'[\uac00-\ud7a3]')
 TS_RE = re.compile(r'<timestamp>\s*\w+,\s*(\w{3})\w*\s+(\d{1,2}),\s*(\d{4}),\s*(\d{1,2}):(\d{2})\s*([AP]M)\s*\(UTC([+-]\d{1,2}(?::\d{2})?)?\)\s*</timestamp>')
 MONTHS = {m: i for i, m in enumerate(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], 1)}
 HEADER_RE = re.compile(r'positions\s+(\d+)\D+(\d+)\s+of\s+(\d+)')
@@ -116,3 +115,36 @@ def dump_json(obj, p):
     os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
     with open(p, 'w', encoding='utf-8') as fh:
         json.dump(obj, fh, ensure_ascii=False, indent=1)
+
+# ---------- language cues ----------
+# Built-in cues are English. For chats in other languages the host bot writes W/cues.json with the same
+# categories in those languages (regex fragments or plain words), see references/cues.md. They are added
+# to the English ones, never replace them.
+CUES_EN = {
+    'directive': [r"\bno\b", r"\bnot (that|this|what)\b", r"\binstead\b", r"\bdon'?t\b", r"\bdo not\b", r"\bstop\b",
+                  r"\bwrong\b", r"\bisn'?t\b", r"\bthat'?s not\b", r"\bi meant\b", r"\bi asked\b",
+                  r"\btoo (long|short|much|many|formal|casual|complex|vague)\b", r"\balready\b", r"\bshorter\b", r"\bsimpler\b",
+                  r"\bwhy didn'?t\b", r"\byou said\b", r"\bactually\b", r"\bagain\b", r"\bfrom now on\b",
+                  r"\bplease (fix|change|remove)\b", r"\bremove\b", r"\bis that (all|right|correct)\b", r"\bare you sure\b"],
+    'fix': [r"from now on", r"i'?ll remember", r"i'?ve (saved|updated|noted)", r"saved (that|this|it)",
+            r"updated my (instructions|notes|guide|rules)", r"going forward"],
+    'promise': [r"i'?ll (let you know|send|get back|report back|follow up)", r"working on it", r"give me a (moment|minute)", r"in progress"],
+    'nudge': [r"^(hi|hello|hey)\b", r"^\?+$", r"^any update", r"^update\?", r"^status\?"],
+    'timely': [r"\b(currently|now|at the moment|as of)\b"],
+}
+
+def load_cues(work):
+    """Compiled cue patterns: English plus W/cues.json (if the host bot wrote one). Returns (patterns, has_custom)."""
+    extra = load_json(os.path.join(work, 'cues.json'), {}) if work else {}
+    pats = {}
+    for k, base in CUES_EN.items():
+        frags = list(base) + [str(x) for x in (extra.get(k) or []) if str(x).strip()]
+        pats[k] = re.compile('(' + '|'.join(f'(?:{f})' for f in frags) + ')', re.I | re.M)
+    return pats, bool(extra)
+
+NON_LATIN = re.compile(r'[^\x00-\u024f\u1e00-\u1eff\s\d\W]')
+
+def mostly_non_latin(t):
+    """True when most letters are outside the Latin script (CJK, Cyrillic, Arabic, Devanagari, ...)."""
+    letters = [c for c in t if c.isalpha()]
+    return bool(letters) and sum(1 for c in letters if ord(c) > 0x24f and not 0x1e00 <= ord(c) <= 0x1eff) > len(letters) / 2

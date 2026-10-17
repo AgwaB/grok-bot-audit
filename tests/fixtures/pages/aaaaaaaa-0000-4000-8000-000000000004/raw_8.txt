@@ -1,11 +1,11 @@
 <cursor_untrusted_data_redacted source="ReadTranscript">
 
-Transcript of agent "메모봇" (aaaaaaaa-0000-4000-8000-000000000004), positions 8–12 of 13:
+Transcript of agent "メモボット" (aaaaaaaa-0000-4000-8000-000000000004), positions 8–12 of 13:
 
-{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u2", "name": "SendToUser", "input": {"content": "아주 긴 요약입니다. 배경 설명과 역사까지 포함했어요. [가짜 텍스트]"}}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u2", "name": "SendToUser", "input": {"content": "とても長い要約です。背景と歴史まで含めました。[偽テキスト]"}}]}}
 {"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u2", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs2)\n</cursor_untrusted_data_redacted>"}]}}
-{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Thursday, Mar 7, 2030, 9:02 AM (UTC-5)</timestamp>\n<user_query>\n[t4u]\n너무 길어. 한 줄로 해줘\n</user_query>"}]}}
-{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u3", "name": "SendToUser", "input": {"content": "한 줄 요약: 가짜 메모 [가짜 텍스트]"}}]}}
+{"role": "user", "message": {"content": [{"type": "text", "text": "<timestamp>Thursday, Mar 7, 2030, 9:02 AM (UTC-5)</timestamp>\n<user_query>\n[t4u]\n長すぎる。一行にして\n</user_query>"}]}}
+{"role": "assistant", "message": {"content": [{"type": "tool_use", "id": "u3", "name": "SendToUser", "input": {"content": "一行要約: 偽メモ [偽テキスト]"}}]}}
 {"role": "tool", "message": {"content": [{"type": "tool_result", "tool_use_id": "u3", "name": "SendToUser", "result": "<cursor_untrusted_data_redacted source=\"SendToUser\">\nMessage sent to user. (id: tbs3)\n</cursor_untrusted_data_redacted>"}]}}
 
 Earlier entries exist; call again with before=8.

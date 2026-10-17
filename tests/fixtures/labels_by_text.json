@@ -41,11 +41,11 @@
   "confidence": "high",
   "evidence": "\"I meant evening\""
  },
- "너무 길어. 한 줄로 해줘": {
+ "長すぎる。一行にして": {
   "label": true,
   "type": "correction",
   "topic": "format_length",
   "confidence": "high",
-  "evidence": "\"너무 길어\""
+  "evidence": "\"長すぎる\""
  }
 }

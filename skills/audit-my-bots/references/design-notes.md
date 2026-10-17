@@ -18,7 +18,7 @@ not like a generated landing page. `make_report.py` already follows these rules;
   Status uses colored text plus a small square: brick `#A23B2A` (Clean up), ochre `#8C5D00` (Needs work), moss `#3F6B47` (Fine). No filled backgrounds.
 - A deliberate pairing of two typefaces: a sans for text and a serif for the user's own words and the title. Hierarchy comes from weight, not size jumps.
   Lines stay under ~80 characters.
-- Quotes: the reader's language on the main line; when it is a translation, the original goes underneath in smaller type.
+- Quotes: the report language on the main line; when it is a translation, the original goes underneath in smaller type.
   Dates sit in a fixed left column.
 - Plain words on controls that say what they do: "Copy", "Copy selection", "Apply".
 - Print/PDF: every section open; checkboxes, buttons and the bottom bar hidden; A4; findings never split across pages.
@@ -30,10 +30,15 @@ not like a generated landing page. `make_report.py` already follows these rules;
 
 ## Fonts
 System fonts only; nothing is bundled or embedded. Two stacks, defined once in `make_report.py`:
-- Sans (body): system UI fonts for Latin (`-apple-system`, `Segoe UI`, Roboto, Helvetica Neue, Arial), then Korean:
-  Apple SD Gothic Neo, Pretendard, Malgun Gothic, Noto Sans KR / Noto Sans CJK KR, NanumGothic, `sans-serif`.
-  On Korean pages the Korean fonts come before Segoe UI and Roboto.
-- Serif (headings, quotes): Iowan Old Style, Charter, Sitka Text, Cambria, Georgia, Noto Serif, then Noto Serif KR /
-  Noto Serif CJK KR, AppleMyungjo, Nanum Myeongjo, Batang, `serif`. On Korean pages the Korean serifs come first.
-The HTML uses the reader's fonts, so it can look slightly different per device. The PDF embeds whatever the printing
-machine has.
+- Sans (body): system UI fonts (`-apple-system`, `Segoe UI`, Roboto, Helvetica Neue, Arial), then fallbacks for
+  non-Latin scripts (Noto Sans and Noto Sans CJK, PingFang, Hiragino, Apple SD Gothic Neo, Microsoft YaHei, Yu Gothic,
+  Malgun Gothic, Noto Sans Arabic / Devanagari / Thai), then `sans-serif`.
+- Serif (title, quotes): Iowan Old Style, Charter, Sitka Text, Cambria, Georgia, then non-Latin fallbacks (Noto Serif and
+  Noto Serif CJK, Songti, Hiragino Mincho, SimSun, Yu Mincho), then `serif`.
+The order doesn't favor any report language. The HTML uses the reader's fonts, so it can look slightly different per device.
+The PDF embeds whatever the printing machine has.
+
+## Language
+The report and the chat messages are in the user's language (English when unclear). Labels come from `ui` in
+`findings.json`; `lang` sets the HTML `lang` attribute. Quotes keep the original words; a translation into the report
+language is added only when the chat was in another language.

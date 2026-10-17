@@ -2,18 +2,17 @@
 """Bot Audit, step 5: render the findings JSON as one self-contained HTML file plus a PDF.
 
 Usage:
-  python3 make_report.py W/findings.json --outdir W/report                 # English (default)
-  python3 make_report.py W/findings.json --outdir W/report --lang ko       # Korean
-  python3 make_report.py W/findings.json --outdir W/report --lang all      # both
-  options: --no-pdf
+  python3 make_report.py W/findings.json --outdir W/report [--no-pdf]
 
-Output: fleet_report_<date>.html/.pdf (en) and fleet_report_<date>.ko.html/.ko.pdf (ko).
-Schema: references/findings-schema.md. Any text field may be a string or {"en": ..., "ko": ...}.
-A quote is {"orig": exact original words, "en": translation?, "ko": translation?}; the report shows the
-reader's language and, when that differs from the original, the original underneath in smaller type.
+Output: fleet_report_<date>.html and fleet_report_<date>.pdf.
+Schema: references/findings-schema.md. The report is written in the user's language: findings.json carries
+"lang" (BCP 47, sets <html lang>), plain-string text fields in that language, and optional "ui" labels that
+override the English defaults in UI_DEFAULT. A quote is {"orig": exact words, "translation": into the report
+language, only when the chat language differs}; the translation goes on the main line, the original underneath.
 Design rules: references/design-notes.md.
 
-Fonts: system fonts only (nothing is embedded). The CSS stacks in CSS below cover macOS/iOS, Windows, Android and Linux;
+Fonts: system fonts only (nothing is embedded). The CSS stacks below cover macOS/iOS, Windows, Android and Linux, with
+Noto and platform fallbacks for non-Latin scripts;
 the HTML uses the viewer's fonts, the PDF uses whatever fonts the machine that prints it has.
 PDF: headless Chrome/Chromium print-to-pdf with a temporary profile that is removed afterwards.
 """
@@ -23,57 +22,59 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 E = lambda s: html.escape(str(s if s is not None else ''), quote=True)
 
 # ---------- strings ----------
-STR = {
- 'en': dict(when='Checked {date}', glance='At a glance', th=('Bot', 'Status', 'Current issue', 'Proposals'),
-            n_items='{n}', top='Do these 3 first', topref='{bot}, item {n}', bybot='Bot by bot', fleet='Across all bots',
-            fleet_h='All bots', fleet_iss='Overlaps, outages, clean-up candidates',
-            fleet_note='Nothing is deleted automatically. Before removing a bot, check in the app whether any routine uses it.',
-            fix='Fix', apply='Apply', copy='Copy', copied='Copied', kind={'description': 'Text for the description', 'memory': 'Text for memory', 'routine': 'Text for a new routine', None: 'Text to add'},
-            why='Why this status', improving='Already improving, nothing to do', more='More ({n})', see='See: {ref}', info='For your information',
-            collapse='Collapse', expand='Show findings ({n})', nothing='Nothing major to fix.', fleet_bot='All bots',
-            st={'red': 'Clean up', 'yellow': 'Needs work', 'green': 'Fine'},
-            lede_all='Checked {n} bots. {y} need work and {r} should be cleaned up.', lede_none='Checked {n} bots. Nothing major to fix.',
-            lede_y='Checked {n} bots. {y} need work.', lede_r='Checked {n} bots. {r} should be cleaned up.',
-            sel_none='Tick the items you want to apply', sel_n='{n} selected', go='Copy selection', sel_prefix='Apply: ',
-            pick_first='Tick the items to apply first', copied_msg='Copied: ', copy_fail="Couldn't copy. Please select the text and copy it.",
-            footer='Built from the {date} audit. Quotes are taken word for word from the chats; translated quotes show the original below.',
-            date=lambda d: f"{['January','February','March','April','May','June','July','August','September','October','November','December'][int(d[5:7])-1]} {int(d[8:10])}, {d[:4]}"),
- 'ko': dict(when='{date} 점검', glance='한눈에 보기', th=('봇', '상태', '지금 문제', '제안'),
-            n_items='{n}건', top='먼저 할 3가지', topref='{bot} {n}번 항목', bybot='봇별 자세히', fleet='봇 전체에서 보이는 것',
-            fleet_h='전체 정리', fleet_iss='겹치는 일, 멈춤, 정리 후보',
-            fleet_note='지우는 건 자동으로 하지 않아요. 정리하기 전에 앱에서 그 봇에 걸린 루틴이 있는지 먼저 확인해 주세요.',
-            fix='개선', apply='적용하기', copy='복사', copied='복사됨', kind={'description': '설명에 넣을 문구', 'memory': '메모리에 넣을 문구', 'routine': '새 루틴에 넣을 문구', None: '넣을 문구'},
-            why='이 상태인 이유', improving='이미 나아지고 있어요 (할 일 없음)', more='더 보기 ({n})', see='함께 보기: {ref}', info='참고',
-            collapse='접기', expand='{n}건 펼쳐 보기', nothing='크게 고칠 건 없어요.', fleet_bot='전체',
-            st={'red': '정리 추천', 'yellow': '손볼 곳', 'green': '괜찮음'},
-            lede_all='봇 {n}개를 살펴봤어요. {y}개는 손볼 곳이 있고 {r}개는 정리를 추천해요.', lede_none='봇 {n}개를 살펴봤어요. 크게 고칠 곳은 없어요.',
-            lede_y='봇 {n}개를 살펴봤어요. {y}개는 손볼 곳이 있어요.', lede_r='봇 {n}개를 살펴봤어요. {r}개는 정리를 추천해요.',
-            sel_none='적용할 항목을 체크해 주세요', sel_n='{n}개 항목을 골랐어요', go='선택한 항목 복사', sel_prefix='적용: ',
-            pick_first='먼저 적용할 항목을 체크해 주세요', copied_msg='복사했어요: ', copy_fail='복사하지 못했어요. 글을 직접 선택해 복사해 주세요',
-            footer='{date} 점검 기록에서 만든 리포트예요. 인용은 실제 대화에서 그대로 가져왔어요. 번역한 인용은 원문을 아래에 함께 보여 줘요.',
-            date=lambda d: f'{int(d[5:7])}월 {int(d[8:10])}일'),
+# Default UI labels (English). The host bot writes the report in the user's language and passes translated
+# labels in findings.json "ui"; any key it leaves out falls back to these. Keep the {placeholders}.
+UI_DEFAULT = {
+    'when': 'Checked {date}', 'glance': 'At a glance', 'th': ['Bot', 'Status', 'Current issue', 'Proposals'],
+    'n_items': '{n}', 'top': 'Do these 3 first', 'topref': '{bot}, item {n}', 'bybot': 'Bot by bot', 'fleet': 'Across all bots',
+    'fleet_h': 'All bots', 'fleet_iss': 'Overlaps, outages, clean-up candidates',
+    'fleet_note': 'Nothing is deleted automatically. Before removing a bot, check in the app whether any routine uses it.',
+    'fix': 'Fix', 'apply': 'Apply', 'copy': 'Copy', 'copied': 'Copied',
+    'kind': {'description': 'Text for the description', 'memory': 'Text for memory', 'routine': 'Text for a new routine', 'other': 'Text to add'},
+    'why': 'Why this status', 'improving': 'Already improving, nothing to do', 'more': 'More ({n})', 'see': 'See: {ref}',
+    'info': 'For your information', 'collapse': 'Collapse', 'expand': 'Show findings ({n})', 'nothing': 'Nothing major to fix.',
+    'fleet_bot': 'All bots', 'st': {'red': 'Clean up', 'yellow': 'Needs work', 'green': 'Fine'},
+    'lede_all': 'Checked {n} bots. {y} need work and {r} should be cleaned up.', 'lede_none': 'Checked {n} bots. Nothing major to fix.',
+    'lede_y': 'Checked {n} bots. {y} need work.', 'lede_r': 'Checked {n} bots. {r} should be cleaned up.',
+    'sel_none': 'Tick the items you want to apply', 'sel_n': '{n} selected', 'go': 'Copy selection', 'sel_prefix': 'Apply: ',
+    'pick_first': 'Tick the items to apply first', 'copied_msg': 'Copied: ', 'copy_fail': "Couldn't copy. Please select the text and copy it.",
+    'footer': 'Built from the {date} audit. Quotes are taken word for word from the chats; translated quotes show the original below.',
+    'date_fmt': '{month} {d}, {y}',
+    'months': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+    'quote_marks': ['\u201c', '\u201d'],
 }
-KIND_ALIAS = {'설명': 'description', '메모리': 'memory'}
-LANG = 'en'
-def T(x, lang=None):
-    """Pick the language from a {en, ko} field; plain strings pass through."""
-    lang = lang or LANG
+UI = dict(UI_DEFAULT)
+
+def set_ui(custom):
+    """Merge the host bot's labels over the defaults (nested dicts merge key by key)."""
+    UI.clear(); UI.update(UI_DEFAULT)
+    for k, v in (custom or {}).items():
+        if k in UI and isinstance(UI[k], dict) and isinstance(v, dict):
+            UI[k] = {**UI[k], **v}
+        elif v not in (None, '', []):
+            UI[k] = v
+
+def fmt_date(iso):
+    y, m, d = int(iso[:4]), int(iso[5:7]), int(iso[8:10])
+    months = UI.get('months') or UI_DEFAULT['months']
+    return UI['date_fmt'].format(y=y, m=m, d=d, month=months[m - 1] if len(months) >= 12 else m)
+
+def T(x):
+    """Text of a field: a plain string (in the report language); a {lang: text} object gives its first value."""
     if isinstance(x, dict):
-        return x.get(lang) or x.get('en') or x.get('ko') or ''
+        return next((v for v in x.values() if isinstance(v, str) and v), '')
     return '' if x is None else str(x)
 
 # ---------- css / js ----------
 CSS = r"""
 :root{--paper:#FCFCFA;--ink:#1E2226;--sub:#5F666D;--faint:#8A9097;--rule:#DCDDD8;--tint:#F1F2EE;
 --acc:#1F5A54;--r:#A23B2A;--y:#8C5D00;--g:#3F6B47;
---kr-sans:'Apple SD Gothic Neo',Pretendard,'Malgun Gothic','Noto Sans KR','Noto Sans CJK KR',NanumGothic;
---kr-serif:'Noto Serif KR','Noto Serif CJK KR',AppleMyungjo,'Nanum Myeongjo',NanumMyeongjo,Batang;
---sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,var(--kr-sans),sans-serif;
---serif:'Iowan Old Style',Charter,'Bitstream Charter','Sitka Text',Cambria,Georgia,'Noto Serif',var(--kr-serif),serif}
-:root:lang(ko){--sans:-apple-system,BlinkMacSystemFont,var(--kr-sans),'Segoe UI',Roboto,Arial,sans-serif;
---serif:var(--kr-serif),'Iowan Old Style',Charter,Georgia,serif}
+--intl-sans:'Noto Sans','Noto Sans CJK SC','Noto Sans CJK JP','Noto Sans CJK KR','PingFang SC','Hiragino Sans','Apple SD Gothic Neo','Microsoft YaHei','Yu Gothic','Malgun Gothic','Noto Sans Arabic','Noto Sans Devanagari','Noto Sans Thai';
+--intl-serif:'Noto Serif','Noto Serif CJK SC','Noto Serif CJK JP','Noto Serif CJK KR','Songti SC','Hiragino Mincho ProN','SimSun','Yu Mincho';
+--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,var(--intl-sans),sans-serif;
+--serif:'Iowan Old Style',Charter,'Bitstream Charter','Sitka Text',Cambria,Georgia,var(--intl-serif),serif}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--paper);color:var(--ink);font:400 15.5px/1.7 var(--sans);word-break:keep-all;overflow-wrap:anywhere}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 15.5px/1.7 var(--sans);overflow-wrap:anywhere}
 .page{max-width:820px;margin:0 auto;padding:56px 28px 140px}
 a{color:inherit}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
@@ -123,8 +124,8 @@ details.bot[open]>summary .tog .c,details.bot:not([open])>summary .tog .o{displa
 .ev .aft{color:var(--sub);font-size:14px;margin-left:4px}
 .gl{white-space:nowrap;color:var(--faint);font-weight:400;font-size:13.5px;margin-left:6px}
 summary .gl{font:400 15px var(--sans)}
-:lang(en) .ev q{font-size:17px}
-:lang(en) header h1{letter-spacing:-.015em}
+.ev q{font-size:17px}
+header h1{letter-spacing:-.015em}
 .fx{margin:12px 0 0;max-width:40em}
 .fx b{font-weight:600;margin-right:6px}
 .cp{margin:10px 0 2px;background:var(--tint);padding:12px 14px 14px;border-radius:3px}
@@ -222,28 +223,26 @@ def ev_item(it):
     if it.get('quote'):
         qd = it['quote']; orig = ''
         if isinstance(qd, dict) and qd.get('orig'):
-            main = qd.get(LANG) or qd['orig']
+            main = qd.get('translation') or qd['orig']
             if norm_q(main) != norm_q(qd['orig']):
-                ol = 'ko' if re.search(r'[\uac00-\ud7a3]', qd['orig']) else 'en'
-                orig = f'<span class="orig" lang="{ol}">{E(qd["orig"])}</span>'
+                orig = f'<span class="orig" lang="{E(qd.get("lang", ""))}">{E(qd["orig"])}</span>' if qd.get('lang') \
+                    else f'<span class="orig">{E(qd["orig"])}</span>'
         else:
             main = T(qd)
-            if LANG != 'ko' and isinstance(qd, dict) and qd.get('ko') and qd.get('ko') != main:
-                orig = f'<span class="orig" lang="ko">{E(qd["ko"])}</span>'
-        oq, cq = ('“', '”') if LANG == 'en' else ('', '')
-        return f'<li><span class="d">{d}</span><span>{who}<q>{oq}{E(main)}{cq}</q>{aft}{orig}</span></li>'
+        oq, cq = (list(UI.get('quote_marks') or ['', '']) + ['', ''])[:2]
+        return f'<li><span class="d">{d}</span><span>{who}<q>{E(oq)}{E(main)}{E(cq)}</q>{aft}{orig}</span></li>'
     return f'<li><span class="d">{d}</span><span>{who}{E(T(it.get("text")))}{aft}</span></li>'
 
 REFS = {}
 def REFNAME(ref):
-    t = STR[LANG]; bid, n = ref.rsplit('-', 1)
+    t = UI; bid, n = ref.rsplit('-', 1)
     return t['topref'].format(bot=REFS.get(bid, t['fleet_bot']), n=n)
 
 def finding(f, bot_name, anchor, n):
-    t = STR[LANG]; cp = ''
+    t = UI; cp = ''
     if f.get('copy'):
-        kind = KIND_ALIAS.get(f.get('copy_kind'), f.get('copy_kind'))
-        cp = (f'<div class="cp"><div class="k"><span>{E(t["kind"].get(kind, t["kind"][None]))}</span>'
+        kind = f.get('copy_kind')
+        cp = (f'<div class="cp"><div class="k"><span>{E(t["kind"].get(kind or 'other') or t["kind"].get('other', ''))}</span>'
               f'<button class="copy" type="button">{E(t["copy"])}</button></div><div class="t">{E(T(f["copy"]))}</div></div>')
     passive = bool(f.get('see') or f.get('info'))
     ap = '' if passive else (f'<label class="ap"><input type="checkbox" class="apply" '
@@ -261,11 +260,11 @@ def NPROP(b):
     return sum(1 for f in b['findings'] + b.get('more', []) if not f.get('info'))
 
 def gloss(b):
-    g = T(b.get('gloss')) if LANG != 'ko' else ''
+    g = T(b.get('gloss'))
     return f'<span class="gl">{E(g)}</span>' if g else ''
 
 def body(d, print_mode=False):
-    t = STR[LANG]; bots = d['bots']
+    t = UI; bots = d['bots']
     REFS.clear(); REFS.update({b['id']: T(b['name']) for b in bots}); REFS['fleet'] = t['fleet_bot']
     c = {k: sum(1 for b in bots if b['status'] == k) for k in ('red', 'yellow', 'green')}
     key = 'lede_all' if c['yellow'] and c['red'] else 'lede_y' if c['yellow'] else 'lede_r' if c['red'] else 'lede_none'
@@ -298,7 +297,7 @@ def body(d, print_mode=False):
                     f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(t["expand"].format(n=len(b["findings"])))}</span></span></summary>{fs}</details>')
     fleet = ''.join(finding(f, t['fleet_bot'], 'fleet', i) for i, f in enumerate(d.get('fleet', []), 1))
     return f"""<div class="page">
-<header><h1>{E(T(d['title']).split(' (')[0])}</h1><p class="when">{E(t['when'].format(date=t['date'](d['date'])))}</p><p class="lede">{E(lede)}</p></header>
+<header><h1>{E(T(d['title']).split(' (')[0])}</h1><p class="when">{E(t['when'].format(date=fmt_date(d['date'])))}</p><p class="lede">{E(lede)}</p></header>
 <h2>{E(t['glance'])}</h2>
 <table class="st"><thead><tr><th>{E(th[0])}</th><th>{E(th[1])}</th><th>{E(th[2])}</th><th style="text-align:right">{E(th[3])}</th></tr></thead><tbody>{rows}</tbody></table>
 <h2>{E(t['top'])}</h2><ol class="top">{top}</ol>
@@ -307,16 +306,16 @@ def body(d, print_mode=False):
 <p class="note">{E(t['fleet_note'])}</p>
 <details class="bot" id="bot-fleet" open><summary><h3>{E(t['fleet_h'])}</h3><span class="stt"></span><span class="iss">{E(t['fleet_iss'])}</span>
 <span class="tog"><span class="o">{E(t['collapse'])}</span><span class="c">{E(t['expand'].format(n=len(d.get('fleet', []))))}</span></span></summary>{fleet}</details>
-<footer>{E(t['footer'].format(date=d['date']))}</footer>
+<footer>{E(t['footer'].format(date=fmt_date(d['date'])))}</footer>
 </div>"""
 
 def page(d, print_mode=False):
-    t = STR[LANG]
+    t = UI
     bar = '' if print_mode else (f'<div class="bar"><div class="in"><span id="cnt"></span>'
                                  f'<button class="go" type="button" onclick="copySel()">{E(t["go"])}</button></div></div><div id="msg" role="status"></div>')
     js_s = json.dumps({k: t[k] for k in ('copy', 'copied', 'sel_none', 'sel_n', 'sel_prefix', 'pick_first', 'copied_msg', 'copy_fail')}, ensure_ascii=False)
     js = '' if print_mode else '<script>' + JS_TPL.replace('__S__', js_s) + '</script>'
-    return (f'<!doctype html><html lang="{LANG}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    return (f'<!doctype html><html lang="{E(d.get("lang") or "en")}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{E(T(d["title"]))} ({E(d["date"][5:7].lstrip("0"))}/{E(d["date"][8:10].lstrip("0"))})</title><style>{CSS}</style></head>'
             f'<body>{body(d, print_mode)}{bar}{js}</body></html>')
 
@@ -337,10 +336,9 @@ def to_pdf(html_path, pdf_path):
     finally:
         shutil.rmtree(prof, ignore_errors=True)
 
-def build(d, lang, outdir, pdf=True):
-    global LANG
-    LANG = lang
-    base = os.path.join(outdir, f'fleet_report_{d["date"]}' + ('' if lang == 'en' else f'.{lang}'))
+def build(d, outdir, pdf=True):
+    set_ui(d.get('ui'))
+    base = os.path.join(outdir, f'fleet_report_{d["date"]}')
     open(base + '.html', 'w', encoding='utf-8').write(page(d)); print('wrote', base + '.html')
     if pdf:
         tmp = base + '.print.html'
@@ -351,13 +349,11 @@ def build(d, lang, outdir, pdf=True):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('findings'); ap.add_argument('--outdir', default='report')
-    ap.add_argument('--lang', choices=['en', 'ko', 'all'], default='en')
     ap.add_argument('--no-pdf', action='store_true')
     a = ap.parse_args()
     d = json.load(open(a.findings, encoding='utf-8'))
     os.makedirs(a.outdir, exist_ok=True)
-    for lang in (['en', 'ko'] if a.lang == 'all' else [a.lang]):
-        build(d, lang, a.outdir, pdf=not a.no_pdf)
+    build(d, a.outdir, pdf=not a.no_pdf)
 
 if __name__ == '__main__':
     main()

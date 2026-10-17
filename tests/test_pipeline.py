@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Offline end-to-end test on the synthetic fixture: pages -> timelines -> judge inputs -> labels ->
-diagnostics -> findings -> HTML + PDF (en and ko). Run: python3 tests/test_pipeline.py [--keep]"""
+diagnostics -> findings -> HTML + PDF, in English and in a second language (custom ui labels + lang). Run: python3 tests/test_pipeline.py [--keep]"""
 import glob, json, os, re, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE); S = os.path.join(ROOT, 'skills', 'audit-my-bots', 'scripts')
 FX = os.path.join(HERE, 'fixtures'); SELF = 'aaaaaaaa-0000-4000-8000-0000000000ff'
 RECIPE, TRIP, OLD, MEMO = (f'aaaaaaaa-0000-4000-8000-00000000000{i}' for i in (1, 2, 3, 4))
 failures = []
+JA_QUOTE = '\u9577\u3059\u304e\u308b\u3002\u4e00\u884c\u306b\u3057\u3066'   # the Japanese fixture correction
+JA_UI = {'glance': '\u6982\u8981', 'st': {'red': '\u6574\u7406\u5019\u88dc', 'yellow': '\u8981\u6539\u5584', 'green': '\u826f\u597d'}}
 
 def run(*args, ok=True):
     r = subprocess.run([sys.executable, *args], capture_output=True, text=True)
@@ -34,8 +36,13 @@ def main():
         check('WARNING' not in r.stdout, 'all fixture transcripts are complete')
         tl = json.load(open(f'{W}/timelines/{RECIPE}.json'))
         check(sum(e['role'] == 'user' for e in tl['events']) == 9 and tl['events'][0]['ts'] == '2030-03-01 09:00', 'timeline parses user messages and timestamps')
+        r = run(f'{S}/judge_inputs.py', '--work', W)   # no cues.json yet: non-Latin replies are kept by the fallback
+        ji0 = json.load(open(f'{W}/judge_inputs.json'))
+        check(any('non-Latin' in x['signal'] for x in ji0) and 'NOTE' in r.stdout, 'without cues.json, non-Latin replies are kept as candidates')
+        shutil.copy(f'{FX}/cues_ja.json', f'{W}/cues.json')
         run(f'{S}/judge_inputs.py', '--work', W)
         ji = json.load(open(f'{W}/judge_inputs.json'))
+        check(not any('non-Latin' in x['signal'] for x in ji), 'with cues.json the cue words are used instead of the fallback')
         gold = json.load(open(f'{FX}/labels_by_text.json'))
         found = {x['user'] for x in ji}
         check(all(t in found for t in gold), f'candidate filter catches every planted correction ({len(gold)}/{len(gold)}; {len(ji)} candidates)')
@@ -56,11 +63,13 @@ def main():
         run(f'{S}/build_findings.py', 'skeleton', '--work', W)
         dr = json.load(open(f'{W}/findings_draft.json'))
         for b in dr['bots']:   # what the host bot would do: write plain-language text, then clear review flags
-            b['issue'] = {'en': f"Test issue for {b['name']}", 'ko': f"{b['name']} 테스트 문제"}; b.pop('needs_review', None)
+            b['issue'] = f"Test issue for {b['name']}"; b.pop('needs_review', None)
             for f in b['findings']:
                 f.pop('needs_review', None)
-                if f.get('topic'): f['copy'] = {'en': 'Test rule text (fake).', 'ko': '테스트 규칙 문구(가짜).'}
+                if f.get('topic'): f['copy'] = 'Test rule text (fake).'
         for f in dr['fleet']: f.pop('needs_review', None)
+        dr['fleet'].append(dict(title='Test translated quote', info=True, fix='Nothing to do (test).',
+                                now=[dict(date='03/07', quote=dict(orig=JA_QUOTE, translation='Too long. Make it one line', lang='ja'))]))
         json.dump(dr, open(f'{W}/findings_draft.json', 'w'), ensure_ascii=False)
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict')
         fz = json.load(open(f'{W}/findings.json'))
@@ -71,16 +80,32 @@ def main():
         json.dump(bad, open(f'{W}/bad.json', 'w'))
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--draft', f'{W}/bad.json', ok=False)
         check(r.returncode != 0 and 'not found word for word' in r.stdout, 'invented quote is rejected')
-        run(f'{S}/make_report.py', f'{W}/findings.json', '--outdir', f'{W}/report', '--lang', 'all')
-        for f in ('fleet_report_2030-03-11.html', 'fleet_report_2030-03-11.pdf', 'fleet_report_2030-03-11.ko.html', 'fleet_report_2030-03-11.ko.pdf'):
-            p = f'{W}/report/{f}'
+        run(f'{S}/make_report.py', f'{W}/findings.json', '--outdir', f'{W}/report')
+        # second language: the host bot sets lang and translated ui labels (a few here; the rest fall back to English)
+        fx = json.load(open(f'{W}/findings.json')); fx['lang'] = 'ja'
+        fx['ui'] = dict(glance=JA_UI['glance'], st=JA_UI['st'], date_fmt='{y}/{m}/{d}', quote_marks=['\u300c', '\u300d'])
+        json.dump(fx, open(f'{W}/findings_ja.json', 'w'), ensure_ascii=False)
+        run(f'{S}/make_report.py', f'{W}/findings_ja.json', '--outdir', f'{W}/report_ja')
+        # skeleton with a non-English language must ask for translation, and --strict must refuse until it's done
+        run(f'{S}/build_findings.py', 'skeleton', '--work', W, '--lang', 'ja')
+        sk = json.load(open(f'{W}/findings_draft.json'))
+        check(sk.get('translate') is True and sk.get('lang') == 'ja' and 'glance' in sk.get('ui', {}), 'non-English skeleton carries lang, ui labels and a translate flag')
+        r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
+        check(r.returncode != 0 and 'translate' in r.stdout, 'finalize --strict refuses an untranslated draft')
+        for f in ('report/fleet_report_2030-03-11.html', 'report/fleet_report_2030-03-11.pdf',
+                  'report_ja/fleet_report_2030-03-11.html', 'report_ja/fleet_report_2030-03-11.pdf'):
+            p = f'{W}/{f}'
             okf = os.path.exists(p) and os.path.getsize(p) > 5000
             if okf and p.endswith('.pdf'): okf = open(p, 'rb').read(5) == b'%PDF-'
             check(okf, f'{f} produced ({os.path.getsize(p) // 1024 if os.path.exists(p) else 0} KB)')
         h = open(f'{W}/report/fleet_report_2030-03-11.html', encoding='utf-8').read()
-        check('<html lang="en"' in h and 'Recipe Helper' in h and 'Too long. Just give me the steps' in h, 'English HTML has bots and verbatim quotes')
-        hk = open(f'{W}/report/fleet_report_2030-03-11.ko.html', encoding='utf-8').read()
-        check('<html lang="ko"' in hk and '정리 추천' in hk, 'Korean HTML uses Korean labels')
+        check('<html lang="en"' in h and 'Recipe Helper' in h and 'Too long. Just give me the steps' in h and 'At a glance' in h,
+              'English HTML has bots, verbatim quotes and default labels')
+        check('Too long. Make it one line' in h and f'<span class="orig" lang="ja">{JA_QUOTE}</span>' in h,
+              'a translated quote shows the translation with the original underneath')
+        hk = open(f'{W}/report_ja/fleet_report_2030-03-11.html', encoding='utf-8').read()
+        check('<html lang="ja"' in hk and JA_UI['glance'] in hk and JA_UI['st']['yellow'] in hk and '2030/3/11' in hk
+              and 'Bot by bot' in hk, 'custom ui labels and lang are used; missing labels fall back to English')
         check('@font-face' not in h + hk and 'data:font' not in h + hk, 'no embedded fonts (system fonts only)')
         check('white-space:nowrap' in re.search(r'\.ev \.d\{[^}]*\}', h).group(0), 'evidence dates do not wrap')
         check(not re.search(r'token|subagent|executor|transcript', re.sub(r'<[^>]+>|<!--.*?-->', ' ', h, flags=re.S), re.I), 'no internal jargon in the English report')
