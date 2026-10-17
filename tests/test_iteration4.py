@@ -105,7 +105,7 @@ def test_render():
     info = dict(title='Went quiet once', info=True, now=[dict(date='', text='No reply for 7 hours on 03/02')], fix='Nothing to do.')
     d = dict(schema=3, lang='en', title='Bot audit report', date='2030-03-22', top3=[],
              bots=[dict(id=M, name='Memo Helper', status='green', issue='Working well', why='No repeated problem.', findings=[dict(info)])],
-             fleet=[dict(info, title='Keep / clean-up candidates')])
+             fleet=[dict(info, title='Went quiet everywhere'), dict(info, title='Keep / clean-up candidates', keep=True)])
     h = report(d)
     check(h.count('Show details') == 2 and 'Show proposals' not in h, '8. sections with only information items show expand_info, not a count')
     foot = re.search(r'<footer>(.*?)</footer>', h).group(1)

@@ -52,6 +52,10 @@ printf 'export SKILL=%q W=%q AUDIT_REPLAY_DIR=%q\n' "$SKILL" "$W" "${AUDIT_REPLA
 ```
 Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts; nothing else to install.
 
+**Test mode** (`$AUDIT_REPLAY_DIR` set): run `replay` (step 1), then `parse` (end of step 2); no listing or fetching.
+Report dates (`date`, lede, footer) use the replay's `now`; the weekly offer (step 9) uses the user's real time zone
+from your context, never the replay timeline's UTC offset; evidence dates stay as recorded.
+
 ## 1. List the bots
 ```bash
 python3 "$SKILL/scripts/sessions.py" list-bots --work "$W" --self "<your own agent id>"
@@ -60,10 +64,8 @@ Your own id is the folder name of your agent directory (`/home/box/agent-data/ag
 the id given by `--self` (or recorded by the replay); with no recorded self, audit every listed bot. A bot that shares
 your name is not you unless the id matches. Only bots in `bots.json` are rows in the report.
 
-**Testing only:** if `$AUDIT_REPLAY_DIR` is set, don't list or fetch. Run
-`python3 "$SKILL/scripts/sessions.py" replay --work "$W"` (no `--self`: the replay's `replay.json` records it if any,
-and the command prints what it skipped) and go straight to `parse` at the end of step 2. Every bot it lists is audited,
-also one with your own name: it is the recorded fleet's bot, not you.
+**Test mode:** instead run `python3 "$SKILL/scripts/sessions.py" replay --work "$W"` (no `--self`: `replay.json` records
+it if any, and the command prints what it skipped). Every bot it lists is audited, also one with your own name.
 
 ## 2. Fetch each bot's history yourself
 For every bot in `bots.json`, call **ReadTranscript** with `agent_id=<id>`, `limit=200` and `write_to_file=true`
@@ -105,20 +107,20 @@ Candidates but no corrections or preferences: leave `labels.tsv` empty and still
 ## 5. Run the checks
 ```bash
 python3 "$SKILL/scripts/diagnostics.py" --work "$W"
-python3 "$SKILL/scripts/build_findings.py" skeleton --work "$W" --lang "<BCP 47 code of the user's language>"
+python3 "$SKILL/scripts/build_findings.py" skeleton --work "$W" --lang "<BCP 47 code of the language the user writes to you in; en if unclear>"
 ```
 
 ## 6. Write the findings
 Read `$SKILL/references/criteria.md`, `findings-schema.md` and `writing.md`, then edit `$W/findings_draft.json`:
-- **Groups and status:** follow the decision procedure in `criteria.md` step by step (shared cause, merging, normal
-  iteration, overriding the suggested status). Resolve each `fix_check` as `writing.md` says. Set `issue` and `why`
-  for every bot.
+- **Groups and status:** follow the decision procedure in `criteria.md` §5 step by step (shared cause and its paste
+  test, merging, normal iteration, status). Resolve each `fix_check` as `writing.md` says. Set `issue` and `why` for every bot.
 - **Words:** replace every placeholder and `TODO` (titles, fixes, `copy`, `issue`, `why`, `ui` labels, `date_label`) with
   plain wording in the user's language. `copy` goes into that bot, so write it in the language the user uses with that bot.
 - **Quotes:** word for word in `quote.orig`; add `translation` when the chat's language differs from the report's.
 - **Leads:** check `leads` (stale memory, promises, skipped questions, the same request in several bots, other bots' jobs)
   and any safety event you saw in the chats. Add an item only for what you confirm by reading (`writing.md`).
 - **Shared causes:** one fleet item per cross-bot cause; each bot points to it with `"see": "fleet-N"`.
+- **Opening sentence:** rewrite the `ui.lede_*` key the final statuses will use (`writing.md`) before finalize.
 - **Review flags:** remove `needs_review`. Then:
 ```bash
 python3 "$SKILL/scripts/build_findings.py" finalize --work "$W" --strict
@@ -165,5 +167,5 @@ Apply **only** what the user picks:
   bot that takes over X's job, then delete X the same way. You never delete or merge anything yourself.
 
 After the picks are handled (or straight away with no proposals), ask once, as a separate short question, whether to
-re-run this audit every week, suggesting Monday 9:00 in the user's real time zone from your context (not an assumed
-zone, and not the replay data's offset); say the day, time and zone. Create the routine only if the user says yes.
+re-run this audit every week: a yes/no choice (two options, "Yes, every Monday 9:00 <zone>" and "No"), in the user's
+language, with Monday 9:00 in the user's real time zone (step 0). Create the routine only if the user says yes.

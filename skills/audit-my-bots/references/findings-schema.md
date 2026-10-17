@@ -63,6 +63,8 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   "fix_check_omitted": {"count": 4, "first": "…", "last": "…"},
              // set by skeleton when more saves exist than are listed (none had an incident after it); finalize drops it
   "too_early": true,         // optional: a fix was saved too recently to judge; shown with ui.too_early
+  "keep": true,              // set by skeleton on the fleet keep / clean-up item; alone in an all-kept fleet it renders
+                             // as one compact line (no number, no box)
   "cleanup": true            // set by skeleton on a clean-up bot's finding: its one option is "Show me how to clean up X"
 }
 ```

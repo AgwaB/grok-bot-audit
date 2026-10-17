@@ -54,3 +54,10 @@
   `replay` prints what it skipped as self (`self` in `replay.json`, `tests/EVAL.md`).
 - Offline end-to-end and regression tests on synthetic fixtures, and a skill eval kit: replay mode
   (`sessions.py replay`), scenarios and an objective grader (`tests/EVAL.md`).
+- Shared cause: a paste test decides specific vs generic (a rule that fits any bot unchanged is generic; one that names
+  the kinds of detail to confirm in that bot's domain is specific). The skeleton no longer drafts a generic "confirm when
+  ambiguous" fix; finalize `--strict` refuses a fix left as `TODO`.
+- An all-kept fleet renders as one compact line (no stray item number, no page of its own); the all-keep default fix
+  doesn't talk about deleting. Evidence with no dates has no blank date column.
+- One test-mode note (replay then parse; report dates from the replay, the weekly offer in the user's real time zone);
+  the weekly re-check is a yes/no choice; `--lang` falls back to English; rewrite the used `ui.lede_*` before finalize.

@@ -19,7 +19,7 @@ not like a generated landing page. `make_report.py` already follows these rules;
 - A deliberate pairing of two typefaces: a sans for text and a serif for the user's own words and the title. Hierarchy comes from weight, not size jumps.
   Lines stay under ~80 characters.
 - Quotes: the report language on the main line; when it is a translation, the original goes underneath in smaller type.
-  Dates sit in a fixed left column.
+  Dates sit in a fixed left column (left out when no line of an item has a date).
 - Plain words on controls that say what they do: "Copy", "Copy selection", "Apply".
 - Print/PDF: every section open; checkboxes, buttons and the bottom bar hidden; A4; findings never split across pages.
 

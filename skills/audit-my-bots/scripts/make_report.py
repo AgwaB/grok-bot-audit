@@ -122,6 +122,7 @@ details.bot[open]>summary .tog .c,details.bot:not([open])>summary .tog .o{displa
 .f h4{font:600 17px/1.45 var(--sans);margin:0}
 .ev{margin:10px 0 0;padding:0;list-style:none}
 .ev{display:grid;grid-template-columns:minmax(76px,max-content) 1fr;column-gap:12px}.ev li{display:contents}.ev li>span{padding:2px 0}
+.ev.nd{display:block}.ev.nd li{display:block}
 .ev .d{color:var(--faint);font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap;padding-top:4px}
 .ev q{font-family:var(--serif);font-size:16.5px;quotes:auto}
 .ev .who{color:var(--sub);font-size:13.5px;margin-right:4px}
@@ -221,11 +222,22 @@ def inline(s):
 def norm_q(s):
     return re.sub(r'\s+', ' ', s or '').strip()
 
-def ev_item(it, bot=''):
+def ev_date(it):
+    if isinstance(it, str):
+        m = EVID.match(it); return m.group(1) if m else ''
+    return str(it.get('date') or '').strip()
+
+def ev_list(items, bot=''):
+    """Evidence list; with no date on any line there is no date column (no blank indent)."""
+    nd = not any(ev_date(x) for x in items)
+    return f'<ul class="ev{" nd" if nd else ""}">' + ''.join(ev_item(x, bot, nd) for x in items) + '</ul>'
+
+def ev_item(it, bot='', nd=False):
+    dsp = lambda d: '' if nd else f'<span class="d">{E(d)}</span>'
     if isinstance(it, str):
         m = EVID.match(it); d, rest = (m.group(1), m.group(2)) if m else ('', it)
-        return f'<li><span class="d">{E(d)}</span><span>{inline(rest)}</span></li>'
-    d = E(it.get('date', ''))
+        return f'<li>{dsp(d)}<span>{inline(rest)}</span></li>'
+    d = it.get('date', '')
     wl = (UI['who_bot'].format(bot=bot) if is_bot_who(it.get('who')) and bot else T(it.get('who'))) or (UI['in_chat'].format(bot=T(it['chat'])) if it.get('chat') else '') \
         or (UI['src'].get(it.get('source'), '') if it.get('source') in ('memory', 'description') else '')
     who = f'<span class="who">{E(wl)}</span>' if wl else ''
@@ -239,8 +251,8 @@ def ev_item(it, bot=''):
                     else f'<span class="orig">{E(qd["orig"])}</span>'
         else:
             main = T(qd)
-        return f'<li><span class="d">{d}</span><span>{who}<q>{E(main)}</q>{aft}{orig}</span></li>'
-    return f'<li><span class="d">{d}</span><span>{who}{E(T(it.get("text")))}{aft}</span></li>'
+        return f'<li>{dsp(d)}<span>{who}<q>{E(main)}</q>{aft}{orig}</span></li>'
+    return f'<li>{dsp(d)}<span>{who}{E(T(it.get("text")))}{aft}</span></li>'
 
 def is_bot_who(w):
     """Evidence "who": "bot" is a keyword (the quote is this bot's own words), not text shown as written."""
@@ -270,7 +282,7 @@ def finding(f, bot_name, anchor, n):
     return (f'<div class="f{" pass" if passive else ""}" id="{E(anchor)}-{n}"><div class="no">{n}</div><div>'
             f'<div class="hd"><h4>{E(T(f["title"]))}'
             + (f' <span class="tag">{E(t["too_early"])}</span>' if f.get('too_early') else '') + f'</h4>{ap}</div>'
-            f'<ul class="ev">{"".join(ev_item(x, bot_name) for x in f.get("now", []))}</ul>'
+            f'{ev_list(f.get("now", []), bot_name)}'
             f'<p class="fx"><b>{E(lab)}</b>{E(T(f.get("fix")))}{see}</p>{cp}</div></div>')
 
 def NPROP(b):
@@ -298,6 +310,17 @@ def lede_of(d):
 def has_quote(d):
     return any(isinstance(e, dict) and e.get('quote') or isinstance(e, str) and '"' in e
                for _, f in all_findings(d) for e in f.get('now', []))
+
+def compact_fleet(d):
+    """The fleet section holds only the all-keep line (no clean-up candidate, no other item): one compact paragraph,
+    no numbered item and no collapsible box (it used to show a stray "1" and take its own PDF page)."""
+    fl = d.get('fleet', [])
+    if len(fl) != 1 or any(b['status'] == 'red' for b in d['bots']): return None
+    f = fl[0]
+    if not f.get('info') or f.get('copy') or f.get('see'): return None
+    if not f.get('keep') and any(isinstance(e, dict) and e.get('quote') for e in f.get('now', [])): return None
+    parts = [T(e.get('text') or '') if isinstance(e, dict) else str(e) for e in f.get('now', [])] + [T(f.get('fix'))]
+    return ' '.join(p.strip() for p in parts if p and p.strip())
 
 def toggle(items):
     """Collapsed-section label: the number of proposals (as in the status table), or expand_info when there are none."""
@@ -351,6 +374,12 @@ def body(d, print_mode=False):
                     f'<span class="iss">{E(T(b["issue"]))}</span>'
                     f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(toggle(b["findings"] + b.get("more", [])))}</span></span></summary>{fs}</details>')
     fleet = ''.join(finding(f, t['fleet_bot'], 'fleet', i) for i, f in enumerate(d.get('fleet', []), 1))
+    cf = compact_fleet(d)
+    if cf is not None:
+        fleet_html = f'<p class="note fleet-keep" id="fleet-1">{E(cf)}</p>'
+    else:
+        fleet_html = (f'<details class="bot" id="bot-fleet" open><summary><h3>{E(t["fleet_h"])}</h3><span class="stt"></span><span class="iss">{E(t["fleet_iss"])}</span>\n'
+                      f'<span class="tog"><span class="o">{E(t["collapse"])}</span><span class="c">{E(toggle(d.get("fleet", [])))}</span></span></summary>{fleet}</details>')
     return f"""<div class="page">
 <header><h1>{E(T(d['title']).split(' (')[0])}</h1><p class="when">{E(t['when'].format(date=(d.get('date_label') or d['date'])))}</p><p class="lede">{E(lede)}</p></header>
 <h2>{E(t['glance'])}</h2>
@@ -359,8 +388,7 @@ def body(d, print_mode=False):
 <h2>{E(t['bybot'])}</h2>{''.join(secs)}
 <h2>{E(t['fleet'])}</h2>
 {f'<p class="note">{E(t["fleet_note"])}</p>' if t.get('fleet_note') else ''}
-<details class="bot" id="bot-fleet" open><summary><h3>{E(t['fleet_h'])}</h3><span class="stt"></span><span class="iss">{E(t['fleet_iss'])}</span>
-<span class="tog"><span class="o">{E(t['collapse'])}</span><span class="c">{E(toggle(d.get('fleet', [])))}</span></span></summary>{fleet}</details>
+{fleet_html}
 <footer>{E(footer(d))}</footer>
 </div>"""
 
@@ -418,7 +446,7 @@ def check_report(d, h):
         if UI.get(k) == UI_DEFAULT.get(k): same.append(k)
         if has_translation(d) and UI.get('footer_tr') == UI_DEFAULT['footer_tr']: same.append('footer_tr')
         if has_quote(d) and UI.get('footer_q') == UI_DEFAULT['footer_q']: same.append('footer_q')
-        secs = [b['findings'] + b.get('more', []) for b in d['bots']] + [d.get('fleet', [])]
+        secs = [b['findings'] + b.get('more', []) for b in d['bots']] + ([] if compact_fleet(d) is not None else [d.get('fleet', [])])
         if any(not any(not f.get('info') and not f.get('see') for f in x) for x in secs) and UI.get('expand_info') == UI_DEFAULT['expand_info']:
             same.append('expand_info')
         if any(e.get('chat') for _, f in all_findings(d) for e in f.get('now', []) if isinstance(e, dict)) and UI.get('in_chat') == UI_DEFAULT['in_chat']: same.append('in_chat')

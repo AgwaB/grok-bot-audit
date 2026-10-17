@@ -86,17 +86,24 @@ with the default impact above, confidence from how clear the evidence is, and ef
 1. **Shared cause.** For each repeated group, read every incident and write the one rule that would have prevented it.
    It is a shared cause only if all of these hold:
    - the rule is **specific to this bot's job or the user's situation and names what to check or do** (a fact, a source,
-     a format, a step), so that someone reading it knows exactly when it applies;
+     a format, a step, or the kinds of detail to confirm), so that someone reading it knows exactly when it applies;
    - the same rule would have prevented **every** incident (or all but one, when there are 4+);
    - it doesn't conflict with what the data shows: a "confirm/ask more" rule is never a shared cause for a bot whose
      question cards the user often skips (the `skipped_questions` lead), because it would make that worse.
 
-   Generic behaviour rules don't count, whatever the topic: "confirm unclear requests in one line", "read the request
-   carefully", "double-check before answering", "be more accurate". They would fit any group, so they decide nothing.
+   **The paste test decides specific vs generic.** Could the rule be pasted into any other bot unchanged and still make
+   sense? Then it is generic and decides nothing: "confirm unclear requests in one line", "ask if ambiguous", "read the
+   request carefully", "double-check before answering", "be more accurate". If the rule names the concrete fields or
+   kinds of detail in this bot's domain (it would be nonsense in an unrelated bot), it is specific, even when each
+   incident got a different one of those details wrong. A "confirm first" rule counts as soon as it lists what to
+   confirm: misreads of lodging type, meal and time of day are one shared cause, "before booking, confirm the lodging
+   type, the meal and the time of day". Don't drop a group because a generic rule would also cover it; look for the
+   specific one first.
 
-   | counts (specific, names the check) | doesn't count (generic) |
+   | counts (specific: names the fields or the check) | doesn't count (generic: fits any bot) |
    |---|---|
-   | "Before booking, confirm hostel vs hotel and the price cap." | "Confirm unclear requests first." |
+   | "Before booking, confirm lodging type (hostel or hotel), meal and time of day." | "Confirm unclear requests first." |
+   | "Before booking, confirm hostel vs hotel and the price cap." | "Ask if the request is ambiguous." |
    | "For logos, find the official file before drawing one." | "Be more careful with images." |
 
    If no specific rule covers the incidents, there is no shared cause: drop the group (it can stay a lead).

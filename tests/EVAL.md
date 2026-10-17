@@ -82,6 +82,7 @@ python3 tests/test_regressions.py   # issues found in real runs (fetch batching,
 python3 tests/test_iteration2.py    # consistency fixes: occasions, fix facts, safer labels, placeholders, quotes
 python3 tests/test_iteration3.py    # lede file, whole-report checks, deduped fix candidates, chat label, compare_runs
 python3 tests/test_iteration4.py    # size-cut batches, "who": "bot", count-neutral ledes, footer, fix-candidate cap, links, self
+python3 tests/test_iteration4b.py   # paste test / no generic default fix, compact all-keep fleet, undated evidence, test-mode note
 python3 tests/test_grade.py         # grade.py itself: a clean run scores 1.0, known-bad outputs fail
 ```
 

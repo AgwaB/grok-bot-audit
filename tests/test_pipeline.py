@@ -72,6 +72,7 @@ def main():
             for f in b['findings']:
                 f.pop('needs_review', None); f.pop('fix_check', None)
                 if f.get('topic'): f['copy'] = 'Test rule text (fake).'
+                if 'TODO' in f.get('fix', ''): f['fix'] = 'Before booking, confirm lodging type, meal and time of day (fake).'
         for f in dr['fleet']:
             f.pop('needs_review', None)
             if isinstance(f.get('copy'), list):

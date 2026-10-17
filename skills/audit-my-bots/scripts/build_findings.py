@@ -23,7 +23,9 @@ TOPIC = {  # title, fix
  'format_length': ('Format and length fixes keep coming up', 'Save the format you want as a default.'),
  'scope_selection': ('It picks the wrong topics or items', 'Write down what to include and what to skip.'),
  'accuracy_sources': ('Facts or sources needed fixing more than once', 'Make checking the source a default step.'),
- 'misread_intent': ('It misreads what you asked for', 'Have it confirm in one line when a request is ambiguous.'),
+ # misread_intent has no default fix: "confirm when ambiguous" fails the paste test (criteria.md section 5), so the
+ # host bot writes the specific one (the kinds of detail to confirm in this bot's domain).
+ 'misread_intent': ('It misreads what you asked for', 'TODO name the details it must confirm first (criteria.md section 5)'),
  'repeated_content': ('It repeats things you already have', 'Have it check what you already have first.'),
  'method_choice': ('It keeps choosing a different way to do it', 'Write down the way you want it done.'),
  'depth_completeness': ('It stops short of what you asked', 'Have it say up front if it cannot do everything.'),
@@ -51,6 +53,9 @@ def corpus(work, diag=None):
     return c
 
 SOURCES = ('chat', 'memory', 'description')
+
+def T_(x):
+    return ' '.join(map(str, x.values())) if isinstance(x, dict) else str(x or '')
 
 def copy_texts(f):
     """A finding's paste text(s): "copy" is a string, or a list of {"bot": name, "text": ...} for several bots."""
@@ -152,11 +157,11 @@ def skeleton(a):
                           fix='It happened once, so nothing to change. The next audit will flag it if it happens again.',
                           info=True))
     keep = [b['name'] for b in bots if b['status'] != 'red']; drop = [b['name'] for b in bots if b['status'] == 'red']
-    fleet.append(dict(title='Keep / clean-up candidates',
+    fleet.append(dict(title='Keep / clean-up candidates' if drop else 'Keep all bots', keep=True,
                       now=[dict(date='', text='Keep: ' + ', '.join(keep))] +
                           ([dict(date='', text='Clean-up candidates: ' + ', '.join(drop))] if drop else []),
-                      fix='Nothing is deleted automatically. Check in the app that a bot has no routines; then you can delete it yourself '
-                          '(right-click the bot in the sidebar and choose Delete).', info=True))
+                      fix=('Nothing is deleted automatically. Check in the app that a bot has no routines; then you can delete it yourself '
+                           '(right-click the bot in the sidebar and choose Delete).') if drop else 'Nothing to clean up.', info=True))
     leads = dict(preferences=[], memory={}, promises={}, skipped_questions={}, similar_requests=diag['fleet']['similar_requests_candidates'][:10],
                  other_bots_job=diag['fleet']['other_bots_job_candidates'][:10])
     for bid, b in diag['bots'].items():
@@ -243,6 +248,7 @@ def finalize(a):
         if isinstance(c, list) and not all(isinstance(x, dict) and x.get('bot') and x.get('text') for x in c):
             errors.append(where + ': "copy" as a list needs {"bot", "text"} in every item')
         if any('TODO' in t for t in copy_texts(f)): warns.append(where + ': copy still has TODO')
+        if any('TODO' in T_(f.get(k)) for k in ('title', 'fix', 'short')): warns.append(where + ': title, fix or short still has TODO')
         for e in f.get('now', []):
             q = e.get('quote')
             if not b and isinstance(e.get('who'), str) and e['who'].strip().lower() == 'bot':

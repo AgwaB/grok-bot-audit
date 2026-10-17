@@ -5,6 +5,8 @@ thresholds are in `criteria.md`. Everything the reader sees is written by you in
 
 ## Repeated-correction groups
 - Apply the decision procedure in `criteria.md` §5 in order (shared cause, merging, normal iteration, fixes, status).
+- **Kept group:** its `fix` and `copy` state the specific rule from §5 step 1 (it passes the paste test: it names
+  what to check in this bot's domain). The skeleton leaves `fix` as `TODO` where its only default would be generic.
 - **Dropped group:** delete the finding. If that group was the only reason for Needs work, set the bot to Fine and name
   the §5 reason in `why`.
 - **`fix_check`:** ids of candidates (`{id, ts, incidents_after, active_days_after}`); their texts are in the bot's
@@ -45,14 +47,17 @@ one sentence.
 - Footer: `ui.footer` is the base sentence; `ui.footer_q` (quotes are word for word) is added only when the report has
   a quote, and `ui.footer_tr` (about translated quotes) only when a translated quote exists. Write all three; with no
   quotes the footer is just the base sentence.
-- Opening sentence: write the `ui.lede_*` key that fits the final statuses (`findings-schema.md`, UI labels) as a
+- Opening sentence: before finalize, rewrite the `ui.lede_*` key that fits the final statuses (`findings-schema.md`, UI labels) as a
   natural sentence for those counts, singular or plural; don't leave a form like "1 need work".
 - `score.basis` is internal (only in `scores.md`); it is never shown, so it can stay short and in any language.
 - Placeholder text: every English string the skeleton wrote is recorded (lines made only of bot names are not); when the report language isn't English,
   finalize `--strict` lists any left unchanged (including `ui` labels).
 - Fleet section: the keep / clean-up item already says nothing is deleted automatically and how to clean up; don't
   repeat it in other items.
-- The keep / clean-up item: reword it in the user's language. If every bot is kept, one short line is enough.
+- The keep / clean-up item (`"keep": true`): reword it in the user's language. If every bot is kept, one short line
+  and a `fix` that says nothing needs cleaning up (no delete steps); with no other fleet item the report shows it as one
+  compact line, not a numbered item.
+- Evidence lines with no date (`"date": ""`): the report drops the date column when no line of that item has a date.
 - The opening sentence (`ui.lede_*`) is also the first sentence of your chat message; keep them the same.
 
 ## Quotes
