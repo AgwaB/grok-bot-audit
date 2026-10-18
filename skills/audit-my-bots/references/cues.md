@@ -43,7 +43,8 @@ list. Write stems or short fragments rather than whole sentences, so different e
 ```
 
 `--all` covers only the correction candidates. The other four keys feed smaller checks (a fix the bot announced, promises
-followed by a nudge, stale memory facts, safety rules in memory). Some checks need no words and work in any language:
+followed by a nudge, stale memory facts, safety rules in memory). They are an extra signal only: promises and stale
+memory are also found from the judge's labels (`later`, `newer_judged`) in any language. Some checks need no words and work in any language:
 memory saves, memory facts holding a date that has passed, and a very short "…?" from the user after an hour or more
 of silence following a short bot message. For the rest, in chats in other languages, either add a few words for those
 keys, or check the memory block and the bots' promises yourself while reading.

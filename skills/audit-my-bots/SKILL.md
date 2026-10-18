@@ -93,8 +93,8 @@ mode and why. Over 400 items: you may write `$W/cues.json` and rerun without `--
 Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. Work in batches:
 1. `judge_inputs.py --work "$W" --list --short --from 1` prints one batch of about 10 KB (how many items depends on the
    chats) and its last line gives the `--from` of the next batch; `--show <n>` prints an item's full messages.
-2. Append that batch's lines to `$W/labels.tsv`: one line per **correction or preference only**, 7 tab-separated
-   columns `n type topic confidence evidence promised user_start` (format in the rubric).
+2. Append that batch's lines to `$W/labels.tsv`: one line per **correction, preference, keep or ack only** (`keep`: keep
+   or paused on purpose; `ack`: only thanks), 7 columns `n type topic confidence evidence promised user_start` (rubric).
 3. `judge_inputs.py --work "$W" --label "$W/labels.tsv"`: it echoes each line with the item's user text. A refused line
    (`user_start` mismatch = off by one) must be fixed before the next batch.
 

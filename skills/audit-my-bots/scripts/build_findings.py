@@ -146,7 +146,9 @@ def skeleton(a):
                'yellow': 'The same correction keeps coming back.' if any(g['strong'] for g in b['groups'].values())
                          else 'Some requests went unanswered.',
                'green': 'No repeated problem.'}[b['status_suggested']]
-        if b['status_suggested'] == 'green' and b.get('too_new'):
+        if b['status_suggested'] == 'green' and b.get('user_keep'):
+            why = f"Paused on purpose: on {md(b['user_keep']['ts'])} you said to keep it."
+        elif b['status_suggested'] == 'green' and b.get('too_new'):
             why = f"Too new to judge: first used {md(b['first_seen'])}."
         elif b['status_suggested'] == 'green' and b.get('routine_active') and b['idle_typed_days'] >= max(3, b['age_days'] / 2):
             why = f"You rarely type to it, but its routine still runs (last run {md(b['last_routine_run'])})."
@@ -191,8 +193,10 @@ def skeleton(a):
                           fix='It happened once, so nothing to change. The next audit will flag it if it happens again.',
                           info=True))
     keep = [b['name'] for b in bots if b['status'] != 'red']; drop = [b['name'] for b in bots if b['status'] == 'red']
+    kept = [diag['bots'][b['id']]['name'] for b in bots if diag['bots'][b['id']].get('user_keep')]
     fleet.append(dict(title='Keep / clean-up candidates' if drop else 'Keep all bots', keep=True,
                       now=[dict(date='', text='Keep: ' + ', '.join(keep))] +
+                          ([dict(date='', text='Paused on purpose (you said to keep them): ' + ', '.join(kept))] if kept else []) +
                           ([dict(date='', text='Clean-up candidates: ' + ', '.join(drop))] if drop else []),
                       fix=('Nothing is deleted automatically. Check in the app that a bot has no routines; then you can delete it yourself '
                            '(right-click the bot in the sidebar and choose Delete).') if drop else 'Nothing to clean up.', info=True))
@@ -200,8 +204,11 @@ def skeleton(a):
     leads = dict(preferences=[], memory={}, promises={}, stalls={}, chat_language={}, skipped_questions={}, similar_requests=diag['fleet']['similar_requests_candidates'][:10],
                  other_bots_job=diag['fleet']['other_bots_job_candidates'][:10])
     for bid, b in diag['bots'].items():
-        if b['memory'] and (b['memory']['time_sensitive'] or b['memory']['near_duplicates']):
-            leads['memory'][bid] = dict(time_sensitive=b['memory']['time_sensitive'], near_duplicates=b['memory']['near_duplicates'])
+        m = b['memory']
+        if m and (m['time_sensitive'] or m['near_duplicates'] or (m['facts'] and m.get('newer_judged'))):
+            # any language: the facts with their dates next to what the user said later; stale = contradicted or expired
+            leads['memory'][bid] = dict(time_sensitive=m['time_sensitive'], near_duplicates=m['near_duplicates'],
+                                        **({'facts': m['facts'][:12], 'newer_judged': m['newer_judged']} if m.get('newer_judged') else {}))
         if b['promise_candidates']: leads['promises'][bid] = b['promise_candidates']
         if b.get('stall_candidates'): leads['stalls'][bid] = b['stall_candidates'][:5]
         if b.get('language_mismatch'): leads['chat_language'][bid] = b['language_mismatch']
@@ -334,6 +341,9 @@ def finalize(a):
     for b in draft['bots']:
         if b.get('status') not in ('green', 'yellow', 'red'):
             errors.append(f"{b.get('name')}: status must be green|yellow|red")
+        uk = (diag['bots'].get(b.get('id')) or {}).get('user_keep')
+        if uk and (b.get('status') == 'red' or any(f.get('cleanup') for f in b.get('findings', []) + b.get('more', []))):
+            errors.append(f"{b.get('name')}: the user said to keep it ({uk['ts'][:10]}); no clean-up status or item (criteria.md §2)")
         if b.get('needs_review'): warns.append(f"{b['name']}: bot entry still needs review")
         for k in ('issue',):
             v = b.get(k)

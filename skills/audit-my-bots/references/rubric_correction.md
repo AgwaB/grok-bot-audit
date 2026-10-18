@@ -25,19 +25,24 @@ next_bot: the bot's reply after it (may be empty if it never answered)
 - `evidence` quotes the few words (from `user` or `next_bot`) that decided it. Never copy secrets (codes, keys,
   passwords) into it.
 - `fix_promised` (optional) is true when `next_bot` promises a lasting change ("from now on I'll…", in any language).
+- `promise_later` (optional) is true when `next_bot` promises to do or send something later on its own ("I'll send it
+  when it's ready", in any language). diagnostics lists these as promise leads; you then read whether it was delivered.
 
 ## Recording verdicts (labels.tsv)
-One line per **correction or preference**; every other item needs no line and is recorded as type `none`. Seven
+One line per **correction, preference, keep or ack** (and any item whose reply promises something later); every other
+item needs no line and is recorded as type `none`. Items marked `[check: last]` (the bot's last 3 user messages) and
+`[check: repeat N days]` (one example of a message sent on 3+ days) are listed after the others; read them for `keep`
+and `ack`. Seven
 tab-separated columns, `\N` or `-` for an empty cell:
 
 | column | value |
 |---|---|
 | n | the item number from `--list` |
-| type | `correction` or `preference` (any type from the table below is accepted) |
+| type | `correction`, `preference`, `keep` or `ack` (any type from the table below is accepted) |
 | topic | one of the fixed topics below |
 | confidence | `high`, `medium` or `low` |
 | evidence | a few words copied from `user` (or `next_bot`), no quote marks needed, never a secret |
-| promised | `yes` if `next_bot` promises a lasting change, else empty |
+| promised | `yes` if `next_bot` promises a lasting change; `later` if it promises to do or send something later; else empty |
 | user_start | the first 5–10 characters of `user`, copied; `--label` refuses the line if they don't match the item |
 
 Example: `17<TAB>correction<TAB>format_length<TAB>high<TAB>too long again<TAB>yes<TAB>Too long`
@@ -56,7 +61,9 @@ or a `user_start` mismatch) must be fixed before going on. No corrections or pre
 | question | Asks for information, a fact check or an explanation ("is that right?"). | false |
 | clarification | Answers the bot's question, picks an option it offered, or gives info it asked for. | false |
 | preference | A standing wish **without objecting** to the last output ("also include the link next time"). Not a correction, but keep it: preferences are memory candidates. | false |
-| other | Thanks, approval, small talk. | false |
+| keep | The user says to keep this bot, or that it is paused or unused on purpose (for a season, until a date, as a backup), in any language. The bot is then never a clean-up candidate. | false |
+| ack | The message **only** thanks, approves or acknowledges ("thanks, that works", "ok, got it", in any language), with no new request. Similar messages on many days are then not counted as a repeated request. | false |
+| other | Small talk, anything else. | false |
 
 ## Decision steps (stop at the first that applies)
 1. Is the user answering a question the bot asked, or choosing among options it offered? → `clarification`.

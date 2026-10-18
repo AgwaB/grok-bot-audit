@@ -25,6 +25,7 @@ RELAY_DAYS = 3
 HANDOFF_LONG = 600  # bot-to-bot messages this long (median), or mostly repeating the previous one, suggest a short format
 HANDOFF_PASTE = 400 # pasted hand-offs this long (median) suggest it too
 BURST_MIN = 15      # bot-to-bot messages mostly this close together are one fan-out run (already machine-made), not hand-offs
+RESEND_MIN = 30     # the same text sent again this soon is a resend (one request)
 FOLLOW_MIN = 30     # a user message this soon after the bot's reply continues that conversation (a follow-up, not a new task)
 STALL_N, STALL_CHARS, STALL_SPAN_MIN = 3, 40, 10   # stall: 3+ short user messages in a row with no reply, over 10+ minutes
 # Sites with a plugin in the app (Connect apps). Matched on the host name only.
@@ -173,6 +174,10 @@ def main():
         too_new = age < NEW_DAYS and age < fleet_age / 2
         run_gap_days = median([days_between(x, y) for x, y in zip(runs, runs[1:])]) or 0
         routine_active = bool(runs) and days_between(runs[-1], now) <= max(3, 2 * run_gap_days)
+        # the user said to keep this bot or that it is paused on purpose (judge type keep, any language): latest one
+        kept = sorted((jin[k]['ts'], jin[k]['user']) for k, v in labels.items()
+                      if k.startswith(bid + ':') and v.get('type') == 'keep' and k in jin and jin[k].get('ts'))
+        user_keep = dict(ts=kept[-1][0], text=norm(kept[-1][1])[:160]) if kept else None
         # ---- corrections -> incidents -> groups
         cors = sorted(((jin[k]['ts'], k, v) for k, v in labels.items()
                        if k.startswith(bid + ':') and v.get('label') and k in jin), key=lambda x: x[0] or '')
@@ -286,6 +291,17 @@ def main():
                 # any language: a very short check-in question ("…?") after an hour or more of silence following a short bot
                 # message that was not itself a question
                 promises.append(dict(ts=e['ts'], bot=norm(e['text'])[:120], next_user=norm(seq[k2 + 1]['text'])[:40], by='silence'))
+        # promises the judge marked (promised = later): the bot said it would do something later, in any language
+        pos = {e['i']: n for n, e in enumerate(seq) if 'i' in e}
+        for k, v in labels.items():
+            if k.startswith(bid + ':') and v.get('promise_later') and k in jin and jin[k].get('ts'):
+                i = int(k.rsplit(':', 1)[1]); n0 = pos.get(i)
+                nxt_u = next((x for x in seq[n0 + 1:] if x['role'] == 'user'), None) if n0 is not None else None
+                if not any(p['bot'][:60] and p['bot'][:60] in norm(jin[k].get('next_bot', '')) for p in promises):   # cue found it too
+                    promises.append(dict(ts=jin[k]['ts'], bot=norm(jin[k].get('next_bot', ''))[:120], by='judge',
+                                         next_user=norm(nxt_u['text'])[:40] if nxt_u else None,
+                                         next_user_ts=nxt_u.get('ts') if nxt_u else None))
+        promises.sort(key=lambda p: p['ts'] or '')
         # ---- memory block
         mem = None
         if tl.get('memory'):
@@ -296,11 +312,27 @@ def main():
                 if past_dates(f['text'], now): f['time_sensitive'] = True; f['past_dates'] = past_dates(f['text'], now)
             dups = [(f1['text'][:100], f2['text'][:100]) for i, f1 in enumerate(facts) for f2 in facts[i + 1:]
                     if jaccard(grams(f1['text']), grams(f2['text'])) >= 0.45]
+            # any language: what the judge found in this chat after the oldest fact was learned (corrections, preferences,
+            # keep); the host compares the facts with these to find stale ones
+            oldest = min((f['learned'] for f in facts), default=None)
+            newer = sorted((dict(ts=jin[k]['ts'], type=v['type'], topic=v.get('topic'), text=norm(jin[k]['user'])[:160])
+                            for k, v in labels.items() if k.startswith(bid + ':') and k in jin and jin[k].get('ts') and oldest
+                            and v.get('type') in ('correction', 'preference', 'keep') and jin[k]['ts'][:10] > oldest),
+                           key=lambda x: x['ts'])
             mem = dict(shown_facts=len(facts), not_shown=sum(int(n) for n in re.findall(r'\((\d+) more', txt)),
-                       time_sensitive=[f for f in facts if f['time_sensitive']], near_duplicates=dups, facts=facts)
+                       time_sensitive=[f for f in facts if f['time_sensitive']], near_duplicates=dups, facts=facts,
+                       newer_judged=newer[-8:])
         # ---- repeated requests across days (routine candidates)
         # messages the judge labelled (corrections, preferences) belong to the correction groups, never also here
-        judged = {k for k, v in labels.items() if k.startswith(bid + ':') and v.get('label')}
+        # (and keep or ack: a keep statement or an acknowledgement is not a request); texts like an acknowledgement go too
+        judged = {k for k, v in labels.items() if k.startswith(bid + ':') and (v.get('label') or v.get('type') in ('keep', 'ack'))}
+        acks = [grams(jin[k]['user']) for k, v in labels.items() if k.startswith(bid + ':') and v.get('type') == 'ack' and k in jin]
+        resent, last_u = set(), None   # the same text sent again within RESEND_MIN minutes: one request, not two
+        for e in users:
+            if last_u and norm(e['text']).lower() == norm(last_u['text']).lower() and \
+                    (P(e['ts']) - P(last_u['ts'])).total_seconds() <= RESEND_MIN * 60:
+                resent.add(e['i'])
+            last_u = e
         follow = set()   # sent soon after the bot's reply: continues that conversation
         prev = None
         for e in ev:
@@ -308,8 +340,10 @@ def main():
                     and (P(e['ts']) - P(prev['ts'])).total_seconds() <= FOLLOW_MIN * 60:
                 follow.add(e['i'])
             if e['role'] in ('user', 'bot') or e.get('kind') in ('routine', 'agent'): prev = e
+        # group-chat turns are left out: the same message is mirrored into every member bot's chat
         items = [(sday.get(e['ts'], e['ts'][:10]), grams(e['text']), norm(e['text'])[:80], e['i'] in follow) for e in users
-                 if len(norm(e['text'])) >= 6 and f"{bid}:{e['i']}" not in judged]
+                 if len(norm(e['text'])) >= 6 and f"{bid}:{e['i']}" not in judged and 'group' not in e and e['i'] not in resent
+                 and not any(jaccard(grams(e['text']), ag) >= 0.5 for ag in acks)]
         rep, seen = [], set()
         for d0, g0, t0, _ in items:
             sim = [(d, t, fu) for d, g, t, fu in items if jaccard(g0, g) >= 0.3]
@@ -381,6 +415,7 @@ def main():
             promise_candidates=promises, memory=mem, repeated_requests=rep[:5],
             handoffs_received=len(handoffs_in), routines_seen=len(runs), last_routine_run=runs[-1].strftime(FMT) if runs else None, routine_active=routine_active,
             idle_typed_days=round(idle_typed, 1), typical_gap_days=typical_gap, within_rhythm=within_rhythm, too_new=too_new, faded=faded,
+            user_keep=user_keep,
             routine_cost=rcost, connector_candidates=connectors, memory_safety_rules=safety,
             group_chats={k: sorted(v) for k, v in groups_seen.items()},
             stall_candidates=stalls, language_mismatch=mism)
@@ -401,8 +436,13 @@ def main():
         outages.append(dict(start=min(w['first'] for w in ow), bots=sorted({w['bot'] for w in ow}), waits=ow))
     out['fleet']['outages'] = outages
     # ---- fleet: similar requests in different bots (candidates)
+    # a group-chat turn is mirrored into every member's chat: it is one message, not the same request in several bots
     keys = [(bid, e['ts'], grams(e['text']), norm(e['text'])[:80]) for bid, tl in tls.items()
-            for e in tl['events'] if e['role'] == 'user' and len(norm(e['text'])) >= 12 and e.get('ts')]
+            for e in tl['events'] if e['role'] == 'user' and len(norm(e['text'])) >= 12 and e.get('ts') and 'group' not in e]
+    gmsg = {(e['group'], e['ts'][:16], norm(e['text']).lower()) for tl in tls.values() for e in tl['events']
+            if e['role'] == 'user' and 'group' in e and e.get('ts')}
+    out['fleet']['group_messages'] = dict(unique=len(gmsg), copies=sum(1 for tl in tls.values() for e in tl['events']
+                                                                    if e['role'] == 'user' and 'group' in e and e.get('ts')))
     pairs = []
     for i, x in enumerate(keys):
         for y in keys[i + 1:]:
@@ -489,7 +529,7 @@ def main():
     for bid, b in out['bots'].items():
         reasons = []
         if b['age_days'] >= 3 and b['idle_days'] >= max(3, b['age_days'] / 2) and (b['share'] < 0.05 or b['faded']) \
-                and not b['too_new'] and not b['within_rhythm']:
+                and not b['too_new'] and not b['within_rhythm'] and not b['user_keep']:
             st = 'red'
             reasons.append('stopped: used about every {typical_gap_days} days, now idle {idle_days} days'.format(**b) if b['faded'] else
                            'barely used: idle {idle_days} of {age_days} days, under 5% of use'.format(**b))
@@ -500,6 +540,8 @@ def main():
             if own_waits: reasons.append(f'{len(own_waits)} unanswered request(s) not explained by a fleet outage')
             st = 'yellow' if reasons else 'green'
             if not reasons: reasons.append('no strong repeated problem')
+            if b['user_keep']:
+                reasons.append(f"paused by you: on {b['user_keep']['ts'][:10]} you said to keep it")
             if b['too_new']: reasons.append(f"too new to judge its use (first message {b['age_days']} days ago)")
             elif b['within_rhythm'] and b['idle_days'] >= max(3, b['age_days'] / 2):
                 reasons.append(f"quiet for {b['idle_days']} days, within its usual rhythm (about every {b['typical_gap_days']} days)")

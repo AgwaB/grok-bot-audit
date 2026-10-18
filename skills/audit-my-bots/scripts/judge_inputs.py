@@ -23,14 +23,20 @@ r"""Bot Audit, step 3: pick user messages that might be corrections, export judg
   python3 judge_inputs.py --work W --label FILE
       FILE: one line per correction or preference (nothing else needs a line), 7 tab-separated columns:
         n  type  topic  confidence  evidence  promised  user_start
-      n = item number (or key); type = correction | preference | topic_rejection | new_request | question |
-      clarification | other; topic = short snake_case cause for corrections and preferences; confidence = high |
+      n = item number (or key); type = correction | preference | keep | ack | topic_rejection | new_request |
+      question | clarification | other (keep: the user wants this bot kept or says it is paused on purpose; ack: the
+      message only thanks, approves or acknowledges); topic = short snake_case cause for corrections and preferences; confidence = high |
       medium | low; evidence = a few words copied from the user message (never a secret); promised = yes if the bot's
-      reply promises a lasting change ("from now on I'll..."), else empty; user_start = the first few characters of the
+      reply promises a lasting change ("from now on I'll..."), later if it promises to do or send something later
+      on its own, else empty; user_start = the first few characters of the
       user message, checked against the item (a mismatch is an error: guards against off-by-one). Empty cell: \N or -.
       Each line is echoed with the item's user text. Lines may be added over several batches; each run rewrites
       W/labels.json from the whole file; items without a line are type "none" (not a correction).
       No candidates at all -> labels.json is {}.
+
+Every mode also adds, after the other items, items marked "check": each bot's last 3 user messages (check: last)
+and one example of each message the user sent on 3+ days outside group chats (check: repeat N days). They need a
+line only if they are keep, ack, a correction or a preference.
 
 The filter is wide on purpose (recall over precision); the rubric decides. Excerpts keep the start and the end of
 long messages (admissions such as "you're right, I missed…" often come at the end of a reply). App notices
@@ -38,10 +44,11 @@ long messages (admissions such as "you're right, I missed…" often come at the 
 """
 import argparse, glob, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import dump_json, load_cues, load_json, norm
+from common import dump_json, grams, jaccard, load_cues, load_json, norm
 
 PREV_N, USER_N, NEXT_N, REQ_N = 800, 1000, 900, 300
-TYPES = ('correction', 'topic_rejection', 'new_request', 'question', 'clarification', 'preference', 'other', 'none')
+TYPES = ('correction', 'topic_rejection', 'new_request', 'question', 'clarification', 'preference', 'keep', 'ack', 'other', 'none')
+TAIL_N, REP_DAYS = 3, 3   # each bot's last user messages; a message repeated on this many days
 EMPTY = ('', '\\N', '-')
 
 CODE_RE = re.compile(r'```.*?```|`[^`\n]*`', re.S)
@@ -99,6 +106,37 @@ def pairs(tl):
             yield e, prev_bot, list(cards), nxt, last_req
         last_req, prev_bot, cards = e, None, []
 
+def around(tl, i):
+    """(the bot messages just before the user event i, the bot's replies after it)."""
+    ev = [e for e in tl['events'] if e['role'] in ('user', 'bot')]
+    k = next(n for n, e in enumerate(ev) if e['i'] == i)
+    prev = []
+    for f in reversed(ev[:k]):
+        if f['role'] == 'user': break
+        prev.insert(0, f['text'])
+    nxt = []
+    for f in ev[k + 1:]:
+        if f['role'] == 'user': break
+        nxt.append(f['text'])
+    return '\n'.join(prev), nxt
+
+def checks(tl):
+    """{event index: [reasons]} for items the host must see whatever the cues say: the user's last messages to this
+    bot (keeping or pausing it is said there, in any language) and one example of each message repeated on 3+ days
+    outside group chats (only the host can tell a real request from an acknowledgement)."""
+    users = [e for e in tl['events'] if e['role'] == 'user' and norm(e['text'])]
+    marks = {}
+    for e in users[-TAIL_N:]: marks.setdefault(e['i'], []).append('last')
+    solo = [e for e in users if 'group' not in e and e.get('ts') and len(norm(e['text'])) >= 6]
+    g = [grams(e['text']) for e in solo]; done = set()
+    for a in range(len(solo)):
+        if a in done: continue
+        sim = [b for b in range(len(solo)) if jaccard(g[a], g[b]) >= 0.3]
+        days = {solo[b]['ts'][:10] for b in sim}
+        if len(days) >= REP_DAYS:
+            done.update(sim); marks.setdefault(solo[sim[-1]]['i'], []).append(f'repeat {len(days)} days')
+    return marks
+
 def card_text(cards):
     return ''.join(f'\n[question card: {c}]' for c in cards)
 
@@ -132,7 +170,7 @@ def listing(work, lo, hi, width=220, kb=0):
                 more = x['n']; break
             same = prev and prev['bot'] == x['bot'] and prev['next_bot'] and norm(prev['next_bot'])[:120] == norm(x['prev_bot'])[:120]
             bot = f"(= next> of #{prev['n']})" if same else ex(x['prev_bot'], width, 0.3)
-            block = (f"#{x['n']} {x['bot_name']} {x['ts']}\n  bot> {bot}\n  user> {ex(x['user'], 400, 0.7)}\n"
+            block = (f"#{x['n']} {x['bot_name']} {x['ts']}" + (f" [check: {x['check']}]" if x.get('check') else '') + f"\n  bot> {bot}\n  user> {ex(x['user'], 400, 0.7)}\n"
                      f"  next> {ex(x['next_bot'], width, 0.3) or '(no reply)'}")
             print(block); size += len(block.encode('utf-8')) + 1; n += 1; last = x['n']; first = first or x['n']
         prev = x
@@ -162,14 +200,17 @@ def label(work, path):
         out[it['key']] = dict(label=ty == 'correction', type=ty,
                               topic=(parts[2] or 'other') if ty in ('correction', 'preference') else None,
                               confidence=parts[3] or 'medium', evidence=parts[4],
-                              **({'fix_promised': True} if parts[5].lower() in ('yes', 'y', '1', 'true') else {}))
+                              **({'fix_promised': True} if parts[5].lower() in ('yes', 'y', '1', 'true') else {}),
+                              **({'promise_later': True} if parts[5].lower() == 'later' else {}))
         print(f"#{it['n']} {ty} {out[it['key']]['topic'] or ''} | {it['bot_name']} | user: {norm(it['user'])[:50]}")
     for it in items:
         out.setdefault(it['key'], dict(label=False, type='none', topic=None, confidence=None, evidence=''))
     for b in bad: print('ERROR', b)
     dump_json(out, os.path.join(work, 'labels.json'))
     n = sum(v['label'] for v in out.values())
-    print(f'labels.json: {len(out)} items, {n} corrections, {sum(v["type"] == "preference" for v in out.values())} preferences')
+    print(f'labels.json: {len(out)} items, {n} corrections, {sum(v["type"] == "preference" for v in out.values())} preferences, '
+          f'{sum(v["type"] == "keep" for v in out.values())} keep, {sum(v["type"] == "ack" for v in out.values())} ack, '
+          f'{sum(bool(v.get("promise_later")) for v in out.values())} promised later')
     if bad: sys.exit(1)
 
 def main():
@@ -225,11 +266,23 @@ def main():
         else:
             how = ('chosen' if mode == 'all' else 'no cue matched' if mode != 'cues' else 'cue filter') + f"; {why}, recommended: {rec}"
         per.append(f"{tl['name']}: {len(cued) if mode == 'cues' else len(rows)} items, mode used: {mode.split(' ')[0]} ({how})")
+    by_key, n_check = {x['key']: x for x in out}, 0
+    for p in sorted(glob.glob(os.path.join(a.work, 'timelines', '*.json'))):
+        tl = load_json(p)
+        for i, why in checks(tl).items():
+            key = f"{tl['id']}:{i}"; n_check += 1
+            if key in by_key:
+                by_key[key]['check'] = ', '.join(why); continue
+            e = next(x for x in tl['events'] if x['i'] == i); prev, nxt = around(tl, i)
+            out.append(dict(n=len(out) + 1, key=key, bot=tl['id'], bot_name=tl['name'], ts=e['ts'], request='',
+                            prev_bot=ex(prev, PREV_N, 0.35), user=ex(e['text'], USER_N, 0.7),
+                            next_bot=ex('\n'.join(nxt), NEXT_N, 0.4) if nxt else '', signal='(check)', check=', '.join(why)))
     dump_json(out, os.path.join(a.work, 'judge_inputs.json'))
     print('\n'.join(per))
+    print(f'{n_check} items marked "check" (last messages, repeated messages); new ones are at the end of the list')
     if not_plain and not load_cues(a.work)[1]:
-        print('note: the promise and stale-memory word checks are English; for other languages read the memory block and '
-              'promises yourself, or add words to cues.json (references/cues.md). Past dates and long silences are checked in any language.')
+        print('note: the built-in promise and stale-memory words are English; in every language, write "later" in the promised '
+              'column when the bot promises to do something later, and compare leads.memory with the newer messages listed there.')
     print(f'{len(out)} candidates -> {os.path.join(a.work, "judge_inputs.json")}' + ('' if out else '  (none: labels.json is {})'))
 
 if __name__ == '__main__':

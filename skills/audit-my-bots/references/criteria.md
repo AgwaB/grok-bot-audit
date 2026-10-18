@@ -79,13 +79,13 @@ Each check gives leads; keep a lead only after reading the actual messages.
 |---|---|---|
 | Unanswered requests / outage | real request with no reply for 6+ hours; overlapping windows across bots = fleet outage | real; an info item (the bot's own, or once for the fleet), never scored. Limit: messages sent while a bot could not run at all (e.g. after a plan limit) may be missing from its history, so silent outages can be undercounted |
 | Skipped question cards | the app reports that the user moved on without tapping a choice | mostly noise (the user often answers in text instead); a finding only when one bot asks several of the same kind of unneeded question (default impact 1) |
-| Promises without delivery | "I'll let you know…", then the user nudges ("hello?") | check by reading; often already delivered |
+| Promises without delivery | the judge marked the reply `later` (it promised to do or send something later; any language), or the built-in cue words ("I'll let you know…") then a nudge ("hello?"), or a very short "…?" after an hour of silence. Each lead gives the user's next message | check by reading; often already delivered |
 | Stalls | 3+ short user messages in a row (40 characters or less, over 10+ minutes) with no reply in between, shorter than an unanswered request | check by reading: a stuck bot, an error, or the user typing ahead. One stall is information at most; a finding only if it happens on 2+ days (default impact 1) |
 | Chat language | replies in another writing system than the one the user writes this chat in (code, links and paths ignored), after a message in the chat's language, on 2+ days | low priority: a finding (impact 1) only if the user minded it (asked for their language, or said so), else nothing or a short info line |
-| Memory facts | facts with "currently/now" older than 3 days; near-duplicates | a finding only if later chats contradict the fact or it has clearly expired (default impact 1; 2 if the bot acted on the stale fact); duplicates rarely matter |
+| Memory facts | facts with a date that has passed, or with "currently/now" (cue words) older than 3 days; near-duplicates; and, in any language, the facts listed next to the corrections, preferences and keep statements judged in that chat after the fact was learned (`newer_judged`): compare their meaning | a finding only if later chats contradict the fact or it has clearly expired (default impact 1; 2 if the bot acted on the stale fact); duplicates rarely matter |
 | Description vs. use | no saved job description, or one that contradicts what the bot learned or what the user said later | real; the fix is text the user sends that bot to remember (personal bots may have no description field) |
-| Repeated work across days | similar requests on 3+ different days; messages the judge labelled as corrections or preferences are left out (they are in the correction groups) | routine candidate (score with effort 2). If most of them are follow-ups (sent within 30 minutes of the bot's answer: "test it too", "continue"), the skeleton drafts a standing rule instead (`kind` `follow_up`, effort 1): a routine can't add a follow-up |
-| Same request in several bots | similar text across bots (attachment notices and file paths are stripped first) | noisy (shared links, the same post pasted to several bots); confirm by topic |
+| Repeated work across days | similar requests on 3+ different days. Left out: messages the judge labelled correction (they are in the correction groups), keep or ack, messages similar to one labelled ack (thanks or approval, not a request), the same text resent within 30 minutes (one request), and group-chat turns (mirrored into every member's chat) | routine candidate (score with effort 2). If most of them are follow-ups (sent within 30 minutes of the bot's answer: "test it too", "continue"), the skeleton drafts a standing rule instead (`kind` `follow_up`, effort 1): a routine can't add a follow-up |
+| Same request in several bots | similar text across bots (attachment notices and file paths are stripped first); group-chat turns are one message, not one per member bot, and are left out | noisy (shared links, the same post pasted to several bots); confirm by topic |
 | One bot doing another's job | a request closer to another bot's description than its own, counted only after that bot existed | noisy; keep only clear cases on 2+ days |
 | Safety events | seen while reading: a secret or code printed in a chat or written to a log, another bot's internal settings shown, a risky action taken without asking | one fleet info item per kind of event, naming the bot and date; never quote or repeat the secret. Counts toward "Needs work" for that bot only if it did it itself |
 | Secrets the user typed | the user pasted a password, key or login code into a chat themselves | not a bot's safety event and no status effect. A lasting secret (password, key, token) gets one line in the safety info item ("you shared a password in X's chat on DATE; consider changing it"); a one-time code that has expired gets nothing. Never quote it |
@@ -93,8 +93,9 @@ Each check gives leads; keep a lead only after reading the actual messages.
 
 Leads that are not corrections (skipped questions, stale memory, promises without delivery, stalls) can become scored findings
 with the default impact above, confidence from how clear the evidence is, and effort 1.
-Stale memory and promises are also found without words (a memory fact with a date that has passed; a very short
-"…?" after an hour of silence; several short nudges with no reply), so chats in any language get these leads.
+Stale memory and promises do not depend on words in one language: the judge marks promises (`later`) and keep
+statements in any language, memory facts come with the judged messages after them, and some checks need no words
+(a date that has passed; a very short "…?" after an hour of silence; several short nudges with no reply).
 Setup checks (group chats, plugins instead of the browser, safety rules kept only in memory, routines that run very
 often) are in `setup.md`. They never change a bot's status.
 
@@ -145,7 +146,9 @@ often) are in `setup.md`. They never change a bot's status.
    (a) step 1 found no shared cause for a strong group → it no longer counts; (b) step 3 dropped it → it no longer
    counts; (c) its latest relevant fix is fixed per section 1 → it no longer counts; (d) after a merge or sub-part in
    steps 1–2 a group became strong → `yellow`; (e) a safety event the bot caused itself → `yellow`; (f) the bot's whole
-   job is done by another bot in use → `red`.
+   job is done by another bot in use → `red`, unless the user said to keep it (`user_keep`).
+   A bot with `user_keep` (labels type `keep`: the user said to keep it or that it is paused on purpose) is never `red`
+   and gets no clean-up item: its suggested status is already `green`, with the reason "paused by you".
    Reasons combine: when a bot has several strong groups, each needs its own reason from (a)–(c) before the bot can
    become `green` (e.g. "(a) for format, (c) for tone"). If any strong group remains, the bot stays `yellow`. No other
    reason changes the status.
