@@ -22,8 +22,8 @@ Machine-readable copy: `evals.json` (prompts in other languages are JSON escapes
   - English summary and report.
   - Keep and clean-up suggestions backed by usage facts. A bot with Korean chats gets a short gloss and translated
     quotes with the original underneath.
-  - No jargon, no Delete/Merge options. The agent can pick the step-3 mode by language (cue filter or `--all`), but the
-    choice has to fit the chats.
+  - No jargon, no Delete/Merge options. Every finding cites a real message id; statuses are the agent's call and have
+    to fit the chats.
 
 ## 3. Japanese user, synthetic fleet (`ja-synth`)
 - Replay: `replay-synth-ja` (4 fake bots: three English, one with a Japanese name and chats). Language: `ja`.

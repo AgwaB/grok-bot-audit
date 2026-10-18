@@ -4,8 +4,8 @@ Run: python3 tests/test_iteration3.py [--keep]
 
  1. make_report writes the opening sentence and its ui key to report/lede.txt and prints both
  2. make_report checks the whole report (all pages) and writes report/checks.txt
- 3. fix candidates are listed once per bot; groups refer to them by id
- 4. finalize: a line made only of bot names is never a placeholder warning
+ 3. fixes are listed once per bot; correction topics refer to them by id
+ 4. a line made only of bot names is never placeholder text
  5. an evidence line with "chat" is shown as the ui.in_chat label (e.g. "You (in X)")
  6. the footer adds the translated-quote sentence only when a translation exists
  7. "too_early": true shows the ui.too_early tag
@@ -34,7 +34,7 @@ def main():
         R = t2.build(root)
         run(f'{S}/sessions.py', 'replay', '--work', W, '--from', R)
         run(f'{S}/sessions.py', 'parse', '--work', W)
-        run(f'{S}/judge_inputs.py', '--work', W, '--all')
+        run(f'{S}/judge_inputs.py', '--work', W)
         ji = json.load(open(f'{W}/judge_inputs.json')); byu = {x['user']: x for x in ji}
         rows = ['No, keep it to the notes goal', 'Again, keep it to the notes goal', 'Stay on the notes goal please',
                 'Too long, the intro is useless', 'Too long again', 'Still too long']
@@ -44,34 +44,24 @@ def main():
         run(f'{S}/diagnostics.py', '--work', W)
         d = json.load(open(f'{W}/diag.json'))
         bf = d['bots'][t2.F]
-        ids = [c['id'] for g in bf['groups'].values() for c in g['fix_candidates']]
-        check(bf['fix_candidates'] and all(set(c) == {'id', 'ts', 'incidents_after', 'active_days_after'} for g in bf['groups'].values() for c in g['fix_candidates'])
-              and set(ids) <= {f['id'] for f in bf['fix_candidates']} and len({f['id'] for f in bf['fix_candidates']}) == len(bf['fix_candidates']),
-              '3. fix candidates listed once per bot; groups refer to them by id')
-        run(f'{S}/build_findings.py', 'skeleton', '--work', W, '--lang', 'ko')
-        dr = json.load(open(f'{W}/findings_draft.json'))
-        check(any(b.get('fix_candidates') for b in dr['bots']), '3. the draft carries the per-bot candidate list next to fix_check')
-        dr['date_label'] = 'x'
-        for b in dr['bots']:
-            b.pop('needs_review', None)
-            for f in b['findings']: f.pop('needs_review', None); f.pop('fix_check', None)
-        for f in dr['fleet']: f.pop('needs_review', None)
-        names = [b['name'] for b in dr['bots']]
-        json.dump(dr, open(f'{W}/findings_draft.json', 'w'))
-        r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
-        name_line = next((e['text'] for f in dr['fleet'] for e in f.get('now', []) if e.get('text') and all(n in names for n in e['text'].split(', '))), None)
-        check(name_line and "placeholder" in r.stdout and not any(f'("{name_line[:50]}' in l for l in r.stdout.splitlines()),
-              '4. a line made only of bot names is not flagged as a placeholder')
+        ids = [c['id'] for g in bf['correction_topics'].values() for c in g['fixes_after']]
+        check(bf['fixes'] and all(set(c) == {'id', 'ts', 'incidents_after', 'active_days_after'} for g in bf['correction_topics'].values() for c in g['fixes_after'])
+              and set(ids) <= {f['id'] for f in bf['fixes']} and len({f['id'] for f in bf['fixes']}) == len(bf['fixes']),
+              '3. fixes listed once per bot; topics refer to them by id')
+        sys.path.insert(0, S); import build_findings as bfm, helpers
+        names = [t2.NAMES[x] for x in (t2.E, t2.F, t2.K)]
+        check(bfm.names_only(', '.join(names), names) and not bfm.names_only('Keep: ' + names[0], names),
+              '4. a line made only of bot names is not placeholder text')
+        run(f'{S}/build_findings.py', 'skeleton', '--work', W, '--lang', 'en')
+        ref = helpers.ref_of(W, t2.F, 'Too long, the intro is useless')
+        dr = helpers.fill(W, findings={t2.NAMES[t2.F]: [helpers.finding('Summary length (test)', ref, 'Too long, the intro is useless')]})
         # finalize in English and render
-        dr['lang'] = 'en'
-        for b in dr['bots']: b['issue'] = 'Test issue'
         fx = next(f for f in dr['bots'] if f['id'] == t2.F)['findings'][0]
-        fx['now'].append(dict(date='03/02', chat=t2.NAMES[t2.E], quote={'orig': 'Stay on the notes goal please'}))
+        fx['now'].append(dict(date='03/02', chat=t2.NAMES[t2.E], ref=helpers.ref_of(W, t2.E, 'Stay on the notes goal please'), quote={'orig': 'Stay on the notes goal please'}))
         fx['too_early'] = True
         json.dump(dr, open(f'{W}/findings_draft.json', 'w'))
         run(f'{S}/build_findings.py', 'finalize', '--work', W)
         fz = json.load(open(f'{W}/findings.json'))
-        check(not any('fix_candidates' in b for b in fz['bots']), '3. finalize drops the per-bot candidate list')
         r = run(f'{S}/make_report.py', f'{W}/findings.json', '--outdir', f'{W}/report', '--no-pdf')
         lede = open(f'{W}/report/lede.txt', encoding='utf-8').read().strip()
         h = open(next(os.path.join(f'{W}/report', x) for x in os.listdir(f'{W}/report') if x.endswith('.html')), encoding='utf-8').read()

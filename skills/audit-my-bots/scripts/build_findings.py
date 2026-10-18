@@ -2,44 +2,25 @@
 """Bot Audit, step 4: draft and finalize the findings JSON (schema: references/findings-schema.md).
 
   python3 build_findings.py skeleton --work W [--lang <BCP 47 code of the user's language, default en>]
-      W/diag.json (+ timelines, labels) -> W/findings_draft.json
-      A starting point: statuses from the criteria, one draft finding per repeated correction group or
-      repeated request, verbatim evidence quotes, and "leads" to check. Memory saves after a group started
-      are listed in the finding's "fix_check" by id (texts once per bot in "fix_candidates"; unverified) for the host bot to confirm or drop. Items marked needs_review=true
-      carry placeholder English text. The host bot writes all wording in the user's language (text fields,
-      "ui" labels, "date_label", quote translations), drops noise, and removes needs_review.
+      W/diag.json -> W/findings_draft.json: the frame you fill. One row per bot (status, issue and why left as TODO,
+      no findings), the fleet keep / clean-up item, and the ui labels in English. You decide every status and write
+      every finding from the facts in diag.json and the chats (references/criteria.md), in the user's language.
   python3 build_findings.py finalize --work W [--draft FILE] [--strict]
-      Validates (statuses, quotes must appear word for word in the saved chats, memory or descriptions),
-      scores every proposal, keeps at most 3 per bot (rest -> "more"), picks the top 3 -> W/findings.json
-      and W/scores.md. --strict fails when needs_review items remain.
+      Checks the structure (statuses, TODO and placeholder text, copy format), the evidence (every finding cites at
+      least one real message by "ref"; every quote is found word for word, in the cited message when it has a ref) and
+      the safety rules (a bot the user said to keep is never red; a red bot has exactly one clean-up item and only a
+      red bot has one). Scores every proposal, keeps at most 3 per bot (rest -> "more"), picks the top 3, orders the
+      rows by status -> W/findings.json and W/scores.md. --strict also fails on warnings.
 """
 import argparse, math, os, re, sys, glob
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import dump_json, has_app_text, load_json, norm
+from common import dump_json, has_app_text, load_json, norm, resolve_ref
 
 CONF = {'high': 1.0, 'medium': 0.7, 'low': 0.4}
-TOPIC = {  # title, fix
- 'tone_style': ('Tone and wording fixes keep coming up', 'Save the tone rule so you stop repeating it.'),
- 'format_length': ('Format and length fixes keep coming up', 'Save the format you want as a default.'),
- 'scope_selection': ('It picks the wrong topics or items', 'Write down what to include and what to skip.'),
- 'accuracy_sources': ('Facts or sources needed fixing more than once', 'Make checking the source a default step.'),
- # misread_intent has no default fix: "confirm when ambiguous" fails the paste test (criteria.md section 5), so the
- # host bot writes the specific one (the kinds of detail to confirm in this bot's domain).
- 'misread_intent': ('It misreads what you asked for', 'TODO name the details it must confirm first (criteria.md section 5)'),
- 'repeated_content': ('It repeats things you already have', 'Have it check what you already have first.'),
- 'method_choice': ('It keeps choosing a different way to do it', 'Write down the way you want it done.'),
- 'depth_completeness': ('It stops short of what you asked', 'Have it say up front if it cannot do everything.'),
- 'missing_context': ('It lacks a fact about your situation', 'Add the missing fact to its memory.'),
- 'other': ('The same correction keeps coming up', 'Save a rule so it stops repeating.'),
-}
 QUOTE_SPLIT = re.compile(r'\s*(?:…|\.\.\.)\s*')
 STATUS_ORDER = {'yellow': 0, 'red': 1, 'green': 2}   # report rows: needs work, then clean-up candidates, then fine
 
-def impact_from(n_inc, days=0, bots=1, recurred=False):
-    i = 3 if (n_inc >= 4 or days >= 5 or bots >= 3) else 2 if (n_inc >= 2 or days >= 3 or bots >= 2) else 1
-    return min(3, i + (1 if recurred else 0))
-
-def corpus(work, diag=None):
+def corpus(work):
     """Searchable text by source: chat (messages), memory (memory blocks), description (bot names and descriptions)."""
     chat, mem, desc = [], [], []
     for p in glob.glob(os.path.join(work, 'timelines', '*.json')):
@@ -65,226 +46,20 @@ def copy_texts(f):
         return [str((x or {}).get('text') or '') if isinstance(x, dict) else str(x or '') for x in c]
     return [str(c)] if c else []
 
-SENT_RE = re.compile(r'(?<=[.!?\u3002\uff01\uff1f])\s+|\n+')
-
-def md(ts):
-    """'YYYY-MM-DD…' -> 'MM/DD' (the skeleton's one date format; the host bot may localize it)."""
-    return ts[5:10].replace('-', '/') if ts and len(ts) >= 10 else ''
-
-def pick_quote(text, evidence='', n=200):
-    """Evidence quote for a message: the sentence holding the judge's evidence words if found, else the whole message
-    if short, else its first sentences up to n characters (never cut mid-sentence when a boundary exists)."""
-    t = norm(text)
-    if len(t) <= n:
-        return t
-    parts = [norm(x) for x in SENT_RE.split(text or '') if norm(x)]
-    ev = norm(re.sub(r'^["\'\u201c\u300c]+|["\'\u201d\u300d]+$', '', evidence or ''))
-    if ev:
-        hit = next((x for x in parts if ev in x), None)
-        if hit: return hit if len(hit) <= n * 2 else hit[:n]
-    out = ''
-    for x in parts:
-        if len(out) + len(x) + 1 > n: break
-        out = (out + ' ' + x).strip()
-    return out or t[:n]
-
 def skeleton(a):
-    diag = load_json(os.path.join(a.work, 'diag.json')); jin = {x['key']: x for x in load_json(os.path.join(a.work, 'judge_inputs.json'), [])}
-    tls = {os.path.basename(p)[:-5]: load_json(p) for p in glob.glob(os.path.join(a.work, 'timelines', '*.json'))}
-    lang = a.lang
-    def txt(key):
-        bid, i = key.split(':'); return tls[bid]['events'][int(i)]['text']
-    order = sorted(diag['bots'].items(), key=lambda kv: (STATUS_ORDER[kv[1]['status_suggested']], -kv[1]['share']))
-    bots, fleet, empty = [], [], []
-    for bid, b in order:
-        findings, improving = [], []
-        for topic, g in sorted(b['groups'].items(), key=lambda kv: -kv[1]['incidents']):
-            if not g['repeated']:
-                continue
-            title, fix = TOPIC.get(topic, TOPIC['other'])
-            labels = load_json(os.path.join(a.work, 'labels.json'), {})
-            ev = [dict(date=md(jin.get(k, {}).get('ts')), quote={'orig': pick_quote(txt(k), labels.get(k, {}).get('evidence', ''))})
-                  for k in g['keys'][:4]]
-            conf = 'high' if g['confidences'].count('high') >= max(1, len(g['confidences']) // 2) else 'medium'
-            item = dict(title=title, now=ev, fix=fix, copy=None, copy_kind='memory', needs_review=True, topic=topic,
-                        score=dict(impact=impact_from(g['incidents']), confidence=conf, effort=1, reversibility=1.0,
-                                   basis=f"{g['incidents']} incidents on {g['sessions']} separate occasions"))
-            if g.get('fix_candidates'):
-                # unverified: the host bot decides whether any of these is about this problem (references/writing.md)
-                item['fix_check'] = g['fix_candidates']
-            if g.get('came_back_candidate'):
-                # optional, next to the rule text: a low-cadence routine in this bot that reviews its rules (setup.md).
-                # Empty until the host confirms that a fix about this problem came back and writes the routine text.
-                item['review'] = dict(cadence_days=14, copy='')
-            if g.get('fix_candidates_omitted'):
-                # more saves than are listed, all with no incident after them: the timeline has the rest (kind memory_write)
-                item['fix_check_omitted'] = g['fix_candidates_omitted']
-            findings.append(item)
-        reps = b['repeated_requests']   # the top routine candidate and the top follow-up (a different fix each)
-        for r in [x for x in reps if not x.get('follow_up')][:1] + [x for x in reps if x.get('follow_up')][:1]:
-            if len(r['days']) >= 3 and b['status_suggested'] != 'red':
-                ev = [dict(date=f"{md(r['days'][0])}~{md(r['days'][-1])}", quote={'orig': pick_quote(t)}) for t in r['examples'][:3]]
-                if r.get('follow_up'):
-                    # the same follow-up after its answers ("test it too", "continue"): a standing rule, not a routine
-                    findings.append(dict(title='You add the same follow-up by hand on many days', now=ev, kind='follow_up',
-                                         fix='Save it as a standing rule so it does this without being asked. TODO the rule',
-                                         copy=None, copy_kind='memory', needs_review=True,
-                                         score=dict(impact=impact_from(0, days=len(r['days'])), confidence='medium', effort=1, reversibility=1.0,
-                                                    basis=f"similar follow-up on {len(r['days'])} days")))
-                else:
-                    findings.append(dict(title='You ask for the same thing by hand on many days', now=ev,
-                                         fix='A routine could do this on a schedule. Check the routines page in the app first.',
-                                         copy=None, copy_kind='routine', needs_review=True,
-                                         score=dict(impact=impact_from(0, days=len(r['days'])), confidence='medium', effort=2, reversibility=1.0,
-                                                    basis=f"similar request on {len(r['days'])} days")))
-        if b['description_empty'] and b['status_suggested'] != 'red':
-            empty.append(bid)
-            findings.append(dict(title='No saved job description', now=[], fix='See the shared job-text item.',
-                                 see='fleet-1'))
-        why = {'red': 'Used regularly before, but quiet for far longer than usual.' if b.get('faded') else
-                      'Barely used for most of its life, and a very small part of your overall use.',
-               'yellow': 'The same correction keeps coming back.' if any(g['strong'] for g in b['groups'].values())
-                         else 'Some requests went unanswered.',
-               'green': 'No repeated problem.'}[b['status_suggested']]
-        if b['status_suggested'] == 'green' and b.get('user_keep'):
-            why = f"Paused on purpose: on {md(b['user_keep']['ts'])} you said to keep it."
-        elif b['status_suggested'] == 'green' and b.get('too_new'):
-            why = f"Too new to judge: first used {md(b['first_seen'])}."
-        elif b['status_suggested'] == 'green' and b.get('routine_active') and b['idle_typed_days'] >= max(3, b['age_days'] / 2):
-            why = f"You rarely type to it, but its routine still runs (last run {md(b['last_routine_run'])})."
-        elif b['status_suggested'] == 'green' and b.get('within_rhythm') and b['idle_days'] >= max(3, b['age_days'] / 2):
-            why = f"Quiet lately, but that fits how often you use it (about every {b['typical_gap_days']} days)." 
-        if b['status_suggested'] == 'red':
-            last = md(b['last_request']) if b.get('last_request') else ''
-            cu = dict(cleanup=True, short=f"Show me how to clean up {b['name']}", needs_review=True,
-                      fix='Consider cleaning it up, or moving its job to a bot you use. How: see the keep / clean-up item.')
-            if b.get('faded'):   # a habit that stopped: its own title and reason, not "barely used"
-                cu.update(title='Stopped being used', now=[dict(date=f"{md(b['first_seen'])}~{last}", text=f"Used on {b['active_days']} days, about every {b['typical_gap_days']} days"),
-                                                           dict(date=last, text=f"Last request; quiet for {int(b['idle_days'])} days since")],
-                          score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='stopped habit'))
-            else:
-                cu.update(title='Barely used', now=[dict(date='', text=f"Last request {last}" if last else 'No typed requests')],
-                          score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='idle; small share'))
-            # its repeated corrections are not proposals for a bot to clean up; they become optional lessons
-            # "if you come back to it" inside the clean-up item (empty copy until the host writes it; dropped if left empty)
-            lessons = [dict(topic=f['topic'], title=f['title'], now=f['now'][:2], copy='') for f in findings if f.get('topic')]
-            if lessons: cu['lessons'] = lessons
-            findings = [cu] + [f for f in findings if not f.get('topic')]
-        own = [w for w in b['waits'] if not w['fleet_outage'] and w['texts']]
-        if own:   # unanswered requests: information, not a scored proposal
-            findings.append(dict(title='Some requests went unanswered', info=True, needs_review=True,
-                                 now=[dict(date=md(w['first']), quote={'orig': pick_quote(w['texts'][0])}) for w in own[:3]],
-                                 fix='It went quiet for hours after these messages. Check whether it was busy or stuck.'))
-        bots.append(dict(id=bid, name=b['name'], status=b['status_suggested'], issue='TODO short issue', why=why.strip(),
-                         improving=improving, findings=findings, needs_review=True,
-                         **({'fix_candidates': b['fix_candidates']} if b.get('fix_candidates') and any('fix_check' in f for f in findings) else {})))
-    if empty:
-        # Personal bots may have no description field: the text goes to each bot as a message asking it to remember.
-        fleet.append(dict(title=f'Bots with no saved job description: {len(empty)}', kind='job_text',
-                          now=[dict(date='', text=', '.join(diag['bots'][x]['name'] for x in empty))],
-                          fix='Send each bot a short message saying what its job is and asking it to remember it.',
-                          copy=[dict(bot=diag['bots'][x]['name'], text='TODO job text') for x in empty],
-                          copy_kind='memory', needs_review=True,
-                          score=dict(impact=impact_from(0, bots=len(empty)), confidence='medium', effort=1, reversibility=1.0, basis=f'{len(empty)} bots')))
-    for o in diag['fleet']['outages']:
-        fleet.append(dict(title='Several bots stopped answering at the same time',
-                          now=[dict(date=md(w['first']), chat=diag['bots'][w['bot']]['name'], quote={'orig': pick_quote(w['texts'][0])})
-                               for w in o['waits'][:4] if w['texts']],
-                          fix='It happened once, so nothing to change. The next audit will flag it if it happens again.',
-                          info=True))
-    keep = [b['name'] for b in bots if b['status'] != 'red']; drop = [b['name'] for b in bots if b['status'] == 'red']
-    kept = [diag['bots'][b['id']]['name'] for b in bots if diag['bots'][b['id']].get('user_keep')]
-    fleet.append(dict(title='Keep / clean-up candidates' if drop else 'Keep all bots', keep=True,
-                      now=[dict(date='', text='Keep: ' + ', '.join(keep))] +
-                          ([dict(date='', text='Paused on purpose (you said to keep them): ' + ', '.join(kept))] if kept else []) +
-                          ([dict(date='', text='Clean-up candidates: ' + ', '.join(drop))] if drop else []),
-                      fix=('Nothing is deleted automatically. Check in the app that a bot has no routines; then you can delete it yourself '
-                           '(right-click the bot in the sidebar and choose Delete).') if drop else 'Nothing to clean up.', info=True))
-    fleet += setup_items(diag)
-    leads = dict(preferences=[], memory={}, promises={}, stalls={}, chat_language={}, skipped_questions={}, similar_requests=diag['fleet']['similar_requests_candidates'][:10],
-                 other_bots_job=diag['fleet']['other_bots_job_candidates'][:10])
-    for bid, b in diag['bots'].items():
-        m = b['memory']
-        if m and (m['time_sensitive'] or m['near_duplicates'] or (m['facts'] and m.get('newer_judged'))):
-            # any language: the facts with their dates next to what the user said later; stale = contradicted or expired
-            leads['memory'][bid] = dict(time_sensitive=m['time_sensitive'], near_duplicates=m['near_duplicates'],
-                                        **({'facts': m['facts'][:12], 'newer_judged': m['newer_judged']} if m.get('newer_judged') else {}))
-        if b['promise_candidates']: leads['promises'][bid] = b['promise_candidates']
-        if b.get('stall_candidates'): leads['stalls'][bid] = b['stall_candidates'][:5]
-        if b.get('language_mismatch'): leads['chat_language'][bid] = b['language_mismatch']
-        if b['skipped_questions']['count']:
-            leads['skipped_questions'][bid] = dict(count=b['skipped_questions']['count'], questions=b['skipped_questions']['questions'])
-        leads['preferences'] += [norm(txt(k))[:120] for k in b['preferences'] if k in jin]
+    diag = load_json(os.path.join(a.work, 'diag.json'))
+    order = sorted(diag['bots'].items(), key=lambda kv: -kv[1]['share'])
+    bots = [dict(id=bid, name=b['name'], status='TODO', issue='TODO short issue', why='TODO one sentence: why this status',
+                 improving=[], findings=[], needs_review=True) for bid, b in order]
+    fleet = [dict(title='Keep / clean-up', keep=True, info=True, needs_review=True,
+                  now=[dict(date='', text='TODO which bots to keep, which are clean-up candidates, and any you said to keep')],
+                  fix='TODO nothing is deleted automatically; how the user cleans up (SKILL.md step 9), or that nothing needs it')]
     from make_report import UI_DEFAULT
-    draft = dict(schema=3, lang=lang, title='Bot audit report', date=diag['now'][:10], date_label='TODO ' + diag['now'][:10],
-                 ui=dict(UI_DEFAULT), bots=bots, fleet=fleet, leads=leads)
+    draft = dict(schema=3, lang=a.lang, title='Bot audit report', date=diag['now'][:10], date_label='TODO ' + diag['now'][:10],
+                 ui=dict(UI_DEFAULT), bots=bots, fleet=fleet)
     draft['_skeleton'] = dict(lang='en', texts=sorted(set(placeholder_texts(draft))))
     dump_json(draft, os.path.join(a.work, 'findings_draft.json'))
-    n = sum(len(b['findings']) for b in bots)
-    print(f'draft: {len(bots)} bots, {n} bot findings, {len(fleet)} fleet items -> {os.path.join(a.work, "findings_draft.json")}')
-
-SETUP_KINDS = ('group', 'redundant_groups', 'handoff_format', 'connector', 'safety_rules', 'routine_cost')
-HANDOFF_FIELDS = ['goal', 'where', 'done_when', 'waiting_on']   # the fixed short hand-off format (setup.md)
-
-def setup_items(diag):
-    """Setup proposals (references/setup.md), after the keep item; the report shows them in their own section.
-    Each comes only from evidence in the chats; English placeholders, the host bot writes the words."""
-    out, B = [], diag['bots']
-    for g in diag['fleet'].get('group_candidates', []):
-        days = sorted({d for h in g['handoffs'] for d in h['days']})
-        # one group per project: the chain's bots in order, a lead, each bot's part, and a "blocked -> ask the user" step
-        out.append(dict(kind='group', title='You pass work between ' + ', '.join(g['bots_names']) + ' by hand',
-                        now=[dict(date='', text=f"{h['src_name']} -> {h['to_name']}: pasted on {', '.join(md(d) for d in h['days'])}")
-                             for h in g['handoffs']],
-                        group=dict(project='TODO project name', lead=g['lead_name'], order=g['bots_names'],
-                                   members=[dict(bot=n, part='TODO what this bot does') for n in g['bots_names']], blocked='ask_user'),
-                        fix=f"A group chat for this project could pass the work along, with {g['lead_name']} leading. TODO steps (setup.md)",
-                        copy='TODO first message for the group: the project, each bot\'s part, who leads, and "if blocked, stop and ask me"',
-                        copy_kind='group', needs_review=True,
-                        short='TODO short line', score=dict(impact=impact_from(0, days=len(days), bots=len(g['bots'])), confidence='medium',
-                                                            effort=2, reversibility=1.0, basis=f"{sum(h['count'] for h in g['handoffs'])} pasted hand-offs on {len(days)} days")))
-    for r in diag['fleet'].get('redundant_groups', []):
-        out.append(dict(kind='redundant_groups', title='Two group chats with the same bots: ' + ' / '.join(r['groups']),
-                        now=[dict(date='', text=f"{gname}: {', '.join(r['bots'])}; last used {md(r['last'][gname])}") for gname in r['groups']],
-                        fix='TODO how to keep one group for this work (setup.md)', needs_review=True, short='TODO short line',
-                        score=dict(impact=1, confidence='medium', effort=1, reversibility=0.8, basis='same members')))
-    hf = diag['fleet'].get('handoff_format_candidates', [])
-    if hf:
-        out.append(dict(kind='handoff_format', title='Hand-offs between bots are long or repeat themselves',
-                        now=[dict(date='', text=f"{h['src_name']} -> {h['to_name']} ({'bot message' if h['via'] == 'bot_message' else 'pasted by you'}): "
-                                                f"{h['messages']} hand-offs, about {h['median_chars']} characters each"
-                                                + (f", {round(100 * h['repetitive'])}% alike" if h.get('repetitive') else '')) for h in hf[:4]],
-                        format=list(HANDOFF_FIELDS),
-                        fix='Agree on one short hand-off format for these bots. TODO how (setup.md)',
-                        copy='TODO the format, one line per field: goal / where (paths or links) / done when / waiting on',
-                        copy_kind='memory', needs_review=True, short='TODO short line',
-                        score=dict(impact=impact_from(0, bots=len({x for h in hf for x in (h['src_name'], h['to_name'])})), confidence='medium',
-                                   effort=1, reversibility=1.0, basis=f"{len(hf)} long or repetitive hand-off pairs")))
-    for bid, b in B.items():
-        if b['status_suggested'] == 'red': continue   # no setup advice for a bot suggested for clean-up
-        for c in b.get('connector_candidates', []):
-            out.append(dict(kind='connector', bot=b['name'], title=f"{b['name']} works {c['service']} through the browser",
-                            now=[dict(date='', text=f"Browser on {c['service']}: {', '.join(md(d) for d in c['days'][:6])}")],
-                            fix=f"Connect the {c['service']} plugin (Connect apps in the sidebar); it is steadier than clicking through the site.",
-                            needs_review=True, short='TODO short line',
-                            score=dict(impact=impact_from(0, days=len(c['days'])), confidence='medium', effort=1, reversibility=1.0,
-                                       basis=f"browser on {c['service']} on {len(c['days'])} days")))
-        if b.get('memory_safety_rules'):
-            out.append(dict(kind='safety_rules', bot=b['name'], title=f"A safety rule for {b['name']} lives only in its memory",
-                            now=[dict(date=md(r['date']), source='memory', quote={'orig': r['text']}) for r in b['memory_safety_rules'][:3]],
-                            fix='Keep it, and also add it as an Auto-review rule (Settings > General > Auto-review rules).',
-                            copy='TODO the rule, worded for Auto-review', copy_kind='other', needs_review=True, short='TODO short line',
-                            score=dict(impact=1, confidence='medium', effort=1, reversibility=1.0, basis='safety boundary only in memory')))
-        rc = b.get('routine_cost')
-        if rc:
-            out.append(dict(kind='routine_cost', bot=b['name'], title=f"A routine of {b['name']} runs very often",
-                            now=[dict(date='', text=f"About every {rc['median_gap_min']} minutes ({rc['runs_per_day']} runs a day); "
-                                                    f"{round(100 * rc['unchanged_or_silent'])}% of runs said nothing new")],
-                            fix='Ask it to run less often, end quietly when nothing changed, and stop once the job is done.',
-                            copy='TODO edit text for the routine', copy_kind='routine', needs_review=True, short='TODO short line',
-                            score=dict(impact=2 if rc['runs_per_day'] >= 24 else 1, confidence='high', effort=1, reversibility=1.0,
-                                       basis=f"{rc['runs']} runs, median gap {rc['median_gap_min']} min")))
-    return out
+    print(f'draft: {len(bots)} bots (status TODO), {len(fleet)} fleet item -> {os.path.join(a.work, "findings_draft.json")}')
 
 VISIBLE = ('title', 'fix', 'short', 'issue', 'why', 'text', 'after', 'gloss')
 
@@ -324,7 +99,7 @@ def iter_findings(d):
 def finalize(a):
     draft = load_json(a.draft or os.path.join(a.work, 'findings_draft.json'))
     diag = load_json(os.path.join(a.work, 'diag.json'), {'bots': {}})
-    text = corpus(a.work, diag)
+    text = corpus(a.work)
     errors, warns = [], []
     if 'TODO' in str(draft.get('date_label', '')): warns.append('date_label still has TODO (write the date as the reader writes it)')
     sk = draft.get('_skeleton') or {}
@@ -338,14 +113,23 @@ def finalize(a):
         same = [k for k, v in (draft.get('ui') or {}).items() if isinstance(v, str) and len(v) > 3 and v == UI_DEFAULT.get(k)
                 and not placeholder_only(v)]
         if same: warns.append('ui labels still in the fallback language: ' + ', '.join(same[:12]))
+    tls = {os.path.basename(p)[:-5]: load_json(p) for p in glob.glob(os.path.join(a.work, 'timelines', '*.json'))}
+    known = {b.get('id') for b in draft['bots']}
+    for bid in diag['bots']:
+        if bid not in known: errors.append(f"{diag['bots'][bid]['name']}: no row for this bot (every audited bot is a row)")
     for b in draft['bots']:
         if b.get('status') not in ('green', 'yellow', 'red'):
             errors.append(f"{b.get('name')}: status must be green|yellow|red")
         uk = (diag['bots'].get(b.get('id')) or {}).get('user_keep')
-        if uk and (b.get('status') == 'red' or any(f.get('cleanup') for f in b.get('findings', []) + b.get('more', []))):
-            errors.append(f"{b.get('name')}: the user said to keep it ({uk['ts'][:10]}); no clean-up status or item (criteria.md §2)")
+        cleanups = [f for f in b.get('findings', []) + b.get('more', []) if f.get('cleanup')]
+        if uk and (b.get('status') == 'red' or cleanups):
+            errors.append(f"{b.get('name')}: the user said to keep it ({uk['ts'][:10]}, {uk.get('ref')}); no clean-up status or item (criteria.md §2)")
+        elif b.get('status') == 'red' and len(cleanups) != 1:
+            errors.append(f"{b.get('name')}: a clean-up bot needs exactly one finding with \"cleanup\": true (its one option)")
+        elif b.get('status') != 'red' and cleanups:
+            errors.append(f"{b.get('name')}: only a clean-up (red) bot has a \"cleanup\" finding")
         if b.get('needs_review'): warns.append(f"{b['name']}: bot entry still needs review")
-        for k in ('issue',):
+        for k in ('issue', 'why'):
             v = b.get(k)
             if 'TODO' in (' '.join(map(str, v.values())) if isinstance(v, dict) else str(v or '')):
                 warns.append(f"{b['name']}: {k} still has TODO")
@@ -353,7 +137,12 @@ def finalize(a):
         ti = f.get('title'); ti = next(iter(ti.values()), '') if isinstance(ti, dict) else ti
         where = (b['name'] if b else 'fleet') + ' / ' + str(ti)
         if f.get('needs_review'): warns.append(where + ': needs review')
-        if 'fix_check' in f: warns.append(where + ': fix_check not resolved (confirm or drop the fix, then delete fix_check)')
+        refs = [e.get('ref') for e in f.get('now', []) if e.get('ref')]
+        for r in refs:
+            if resolve_ref(r, tls)[1] is None: errors.append(f'{where}: ref "{r}" is not a message id in the saved chats')
+        has_events = not b or any(tl['events'] for k, tl in tls.items() if k == b.get('id'))
+        if not f.get('keep') and not refs and has_events:
+            errors.append(where + ': cite at least one message: add "ref" (a message id) to an evidence line')
         c = f.get('copy')
         if isinstance(c, list) and not all(isinstance(x, dict) and x.get('bot') and x.get('text') for x in c):
             errors.append(where + ': "copy" as a list needs {"bot", "text"} in every item')
@@ -381,6 +170,14 @@ def finalize(a):
             src = e.get('source') or 'chat'
             if src not in SOURCES:
                 errors.append(f'{where}: "source" must be one of {", ".join(SOURCES)}'); continue
+            ev_ = resolve_ref(e.get('ref'), tls)[1] if e.get('ref') else None
+            if ev_ is not None and (src == 'chat' or ev_.get('kind') == 'memory_write'):
+                body = norm(ev_.get('text'))
+                miss = next((x for x in QUOTE_SPLIT.split(norm(orig)) if len(x) >= 2 and x not in body), None)
+                if miss:
+                    hint = ' (it is in a memory or description: set "source")' if src == 'chat' and miss in text['any'] else ''
+                    errors.append(f'{where}: quote not found word for word in message {e["ref"]}: "{miss[:60]}"{hint}')
+                continue
             if has_app_text(orig):
                 errors.append(f'{where}: quote contains a file path or an app notice; quote only words people wrote: "{norm(orig)[:60]}"'); continue
             for seg in [s for s in QUOTE_SPLIT.split(norm(orig)) if len(s) >= 2]:
@@ -416,9 +213,6 @@ def finalize(a):
             if not f['lessons']: f.pop('lessons')
     # rows in status order (needs work, clean-up, fine), keeping the draft's order within a status
     draft['bots'] = [b for _, b in sorted(enumerate(draft['bots']), key=lambda ib: (STATUS_ORDER.get(ib[1].get('status'), 3), ib[0]))]
-    for b in draft.get('bots', []):
-        b.pop('fix_candidates', None)
-        for f in b.get('findings', []) + b.get('more', []): f.pop('fix_check_omitted', None)
     with open(os.path.join(a.work, 'scores.md'), 'w', encoding='utf-8') as fh:
         fh.write('| rank | ref | title | score | impact | confidence | effort | reversibility | basis |\n|---|---|---|---|---|---|---|---|---|\n')
         for k, (v, _, r, f) in enumerate(cands, 1):

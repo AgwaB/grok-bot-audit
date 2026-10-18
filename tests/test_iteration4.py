@@ -8,8 +8,8 @@ Run: python3 tests/test_iteration4.py [--keep]
     in a fleet item it is an error
  3. the English fallback opening sentences are count-neutral (no "1 need work")
  4. (option order and fixed strings: documentation, checked in 9)
- 5. fix candidates: an old fix an incident came after is never cut by the cap; left-out saves are counted
-    (fix_check_omitted); link lists never become fix or promise candidates
+ 5. fixes after a topic: an old fix an incident came after is never cut by the cap; left-out saves are counted
+    (fixes_after_omitted); a judged "later" promise is listed with the user's next message
  6. (one-off mistakes vs criteria: documentation, checked in 9)
  7. (secrets the user typed, bots not in the list: documentation, checked in 9)
  8. a section with only information items shows ui.expand_info, not a count; the footer adds the "quotes are word
@@ -143,41 +143,31 @@ def test_pipeline(root):
     check(f'Skipped as self (the bot that ran the audit): {NAMES[A]}.' in r2.stdout
           and A not in {b['id'] for b in json.load(open(os.path.join(root, 'w-self', 'bots.json')))}, '10. replay prints the bot it skipped as self')
     run(f'{S}/sessions.py', 'parse', '--work', W)
-    run(f'{S}/judge_inputs.py', '--work', W, '--all')
+    run(f'{S}/judge_inputs.py', '--work', W)
     ji = json.load(open(f'{W}/judge_inputs.json')); byu = {x['user']: x for x in ji}
-    open(f'{W}/labels.tsv', 'w').write(''.join(f"{byu[u]['n']}\tcorrection\tformat_length\thigh\t-\t-\t{u[:6]}\n"
-                                               for u in ('Too long, cut it down', 'Too long again')))
+    open(f'{W}/labels.tsv', 'w').write(f"{byu['Too long, cut it down']['n']}\tcorrection\tformat_length\thigh\t-\tyes\tToo lo\n"
+                                       f"{byu['Too long again']['n']}\tcorrection\tformat_length\thigh\t-\t-\tToo lo\n"
+                                       f"{byu['Make the weekly memo']['n']}\tnew_request\t-\t-\t-\tlater\tMake\n")
     run(f'{S}/judge_inputs.py', '--work', W, '--label', f'{W}/labels.tsv')
     run(f'{S}/diagnostics.py', '--work', W)
-    d = json.load(open(f'{W}/diag.json')); b = d['bots'][M]; g = b['groups']['format_length']
-    texts = {f['id']: f['text'] for f in b['fix_events']}
-    early = [c for c in g['fix_candidates'] if c['incidents_after']]
+    d = json.load(open(f'{W}/diag.json')); b = d['bots'][M]; g = b['correction_topics']['format_length']
+    texts = {f['id']: f['text'] for f in b['fixes']}
+    early = [c for c in g['fixes_after'] if c['incidents_after']]
     check(len(early) == 1 and 'From now on I will keep summaries short' in texts[early[0]['id']],
-          '5. the early fix an incident came after is kept, though 15 saves came later')
-    later = [c for c in g['fix_candidates'] if not c['incidents_after']]
-    om = g.get('fix_candidates_omitted') or {}
-    check(len(later) == 12 and om.get('count') == 3 and om.get('first') and om.get('last'), '5. 12 latest of the rest kept; 3 left out are counted')
-    check(not any('Going forward' in t or 'https://' in t for t in texts.values()), '5. a link list is never a fix candidate')
-    pr = b['promise_candidates']
-    check(len(pr) == 1 and pr[0]['bot'].startswith("I'll let you know"), '5. a link list is never a promise; a real promise still is')
+          '5. the early (judged) fix an incident came after is kept, though 15 saves came later')
+    later = [c for c in g['fixes_after'] if not c['incidents_after']]
+    check(len(later) == 12 and g.get('fixes_after_omitted') == 3, '5. 12 latest of the rest kept; 3 left out are counted')
+    pr = b['promises']
+    check(len(pr) == 1 and pr[0]['next_user'] and pr[0]['next_user_ref'], '5. a judged "later" promise comes with the next user message')
     run(f'{S}/build_findings.py', 'skeleton', '--work', W, '--lang', 'en')
-    dr = json.load(open(f'{W}/findings_draft.json'))
-    fm = next(x for x in dr['bots'] if x['id'] == M)['findings'][0]
-    check(fm.get('fix_check_omitted', {}).get('count') == 3, '5. the draft finding carries fix_check_omitted')
-    dr['date_label'] = 'March 22, 2030'
-    for x in dr['bots']:
-        x['issue'] = 'Test issue'; x.pop('needs_review', None)
-        for f in x['findings']: f.pop('needs_review', None); f.pop('fix_check', None)
-    for f in dr['fleet']: f.pop('needs_review', None)
-    dr['fleet'][0]['now'].append(dict(date='03/01', who='bot', quote={'orig': 'Shorter.'}))
-    json.dump(dr, open(f'{W}/findings_draft.json', 'w'))
+    import helpers
+    dr = helpers.fill(W, fleet=[dict(title='Fleet note (test)', info=True, fix='Nothing to do (test).',
+                                     now=[dict(date='03/01', who='bot', ref=helpers.ref_of(W, M, 'Shorter.', role='bot'), quote={'orig': 'Shorter.'})])])
     r = run(f'{S}/build_findings.py', 'finalize', '--work', W, ok=False)
     check(r.returncode == 1 and '"who": "bot" means this bot, but a fleet item has none' in r.stdout, '2. "who": "bot" in a fleet item is an error')
-    dr['fleet'][0]['now'][-1]['who'] = NAMES[M]
+    dr['fleet'][-1]['now'][-1]['who'] = NAMES[M]
     json.dump(dr, open(f'{W}/findings_draft.json', 'w'))
     run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict')
-    fz = json.load(open(f'{W}/findings.json'))
-    check(not any('fix_check_omitted' in f for x in fz['bots'] for f in x['findings'] + x.get('more', [])), '5. finalize drops fix_check_omitted')
 
 def test_docs():
     rd = lambda *p: open(os.path.join(SK, *p), encoding='utf-8').read()

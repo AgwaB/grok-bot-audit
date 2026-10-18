@@ -5,9 +5,9 @@ Run: python3 tests/test_iteration5.py [--keep]
 A. grader: the chat-language check measures the prose only. Bot names, markdown table rules and pipes, code spans,
    file paths, attachment lines and test-harness headings ("# Step 8: ...") are not counted, so a Japanese chat about
    bots with English names passes; an English chat about bots with Japanese names still fails
-B. the skeleton's outage item marks user quotes from another bot's chat with "chat" (schema), not "who"
-C. a bot with no proposals shows no "0" in the status table; the grader reads that as 0; the clean-up finding gets a
-   `short` line (its one option and its top-3 line)
+B. an outage item built from diag's overlapping waits quotes each user message with "chat" and its ref; the report
+   labels them with ui.in_chat
+C. a bot with no proposals shows no "0" in the status table; the grader reads that as 0
 D. documentation: commands.log from the first command and the literal env.sh path (step 0); routine text language and
    real time zone; fixes phrased from the user's side; fleet_note and n_items documented; SKILL.md stays short; no
    Hangul anywhere in the repo
@@ -34,7 +34,7 @@ def skeleton(root, replay):
     W = os.path.join(root, 'w-' + replay)
     run(f'{S}/sessions.py', 'replay', '--work', W, '--from', os.path.join(root, replay))
     run(f'{S}/sessions.py', 'parse', '--work', W)
-    run(f'{S}/judge_inputs.py', '--work', W, '--all')
+    run(f'{S}/judge_inputs.py', '--work', W)
     ji = json.load(open(f'{W}/judge_inputs.json', encoding='utf-8'))
     lab = json.load(open(os.path.join(HERE, 'fixtures', 'labels_by_text.json'), encoding='utf-8'))
     rows = [f"{x['n']}\t{l['type']}\t{l['topic']}\t{l['confidence']}\t-\t-\t{x['user'][:6]}\n"
@@ -77,24 +77,16 @@ def test_chat_language():
 
 def test_outage_and_counts(root):
     W, dr = skeleton(root, 'replay-synth-ja')
-    out = [f for f in dr['fleet'] if any(e.get('quote') for e in f.get('now', [])) and f.get('info')]
-    ev = [e for f in out for e in f['now']]
-    names = {b['name'] for b in dr['bots']}
-    check(ev and all(e.get('chat') in names and 'who' not in e for e in ev),
-          'B. outage quotes carry "chat": <bot name> (the user\'s words in that chat), not "who"')
-    cl = [f for b in dr['bots'] for f in b['findings'] if f.get('cleanup')]
-    check(cl and all(f.get('short') for f in cl), 'C. the clean-up finding has a short line for its option and top-3 line')
-    for b in dr['bots']:
-        b['issue'] = 'Test issue'; b.pop('needs_review', None)
-        for f in b['findings']:
-            f.pop('needs_review', None); f.pop('fix_check', None)
-            if f.get('copy') is None and f.get('topic'): f['copy'] = 'Test rule (fake).'
-            if 'TODO' in f.get('fix', ''): f['fix'] = 'Pick this and a test rule is saved (fake).'
-    for f in dr['fleet']:
-        f.pop('needs_review', None)
-        for x in f.get('copy') or []: x['text'] = 'Test description (fake).'
-    dr['date_label'] = 'March 11, 2030'
-    json.dump(dr, open(f'{W}/findings_draft.json', 'w'), ensure_ascii=False)
+    import helpers
+    d = json.load(open(f'{W}/diag.json')); tls = helpers.timelines(W)
+    sys.path.insert(0, S); from common import resolve_ref
+    ws = d['fleet']['overlapping_waits'][0]['waits']
+    ev = []
+    for w in ws:
+        tl, e = resolve_ref(w['refs'][0], tls)
+        ev.append(dict(date=w['first'][5:10].replace('-', '/'), chat=tl['name'], ref=w['refs'][0], quote={'orig': e['text']}))
+    check(len({x['chat'] for x in ev}) >= 2, 'B. overlapping waits name messages (refs) in two or more bots')
+    dr = helpers.fill(W, fleet=[dict(title='Several bots went quiet at once (test)', info=True, now=ev, fix='Nothing to change (test).')])
     run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict')
     fz = json.load(open(f'{W}/findings.json', encoding='utf-8'))
     mr.set_ui({}); h = mr.page(fz)

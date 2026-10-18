@@ -9,7 +9,9 @@
   labels, dates and translations come from `findings.json`, written by the host bot in the user's language; English
   labels are only a fallback. No per-language rules anywhere.
 - Quotes keep the original words, with an optional translation.
-- Cue phrases: a minimal English fallback, plus `cues.json` from the bot, or `judge_inputs.py --all` to judge every reply.
+- Facts, not verdicts: the scripts count, date, dedupe and list (with message ids); the host bot judges every reply,
+  decides each status and writes the findings. `finalize` checks structure and safety, and that every finding cites a
+  real message id whose words match the quote. No word lists.
 - System fonts only: one generic sans and one serif stack (the host bot may override them with `fonts`),
   script-agnostic line breaking; no font files bundled.
 - The skill runs in the host bot only: it fetches every chat itself, never reads app databases instead, and stops if it
@@ -17,25 +19,22 @@
 - The skill finds its files from its own folder, with a fallback to the newest installed copy.
 - One-plugin `.cursor-plugin/marketplace.json` so the repository can be imported directly.
 - Fetching: several pages (several bots) saved in one call; progress notes during long fetches.
-- Judging: `--all` is the default for chats not mostly in English; long messages keep their start and end;
+- Judging: every typed reply after a bot message is an item; long messages keep their start and end;
   `judge_inputs.py --show KEY` prints the full messages.
 - App attachment notices and file paths are stripped from chats before any check and can never be quoted.
 - Evidence may quote a memory fact or a bot description (`source`); a shared fix can carry per-bot paste text
   (`copy` as a list); the Proposals column counts real proposals only.
-- Memory saves after a repeated problem are only fix candidates (`fix_check`): the bot confirms or drops them, and
-  they change neither status nor impact until then.
-- Judging: mode chosen per bot by its chats' language; question cards and the starting request in each item; a compact
-  `--list` view and TSV labels (`--label`); a bot with no cue match gets all its replies judged.
+- Memory saves after a repeated problem are listed as facts (`fixes_after`): the bot judges whether they fixed it.
+- Judging: question cards and the starting request in each item; a compact `--list` view and TSV labels (`--label`).
 - Writing guide (`references/writing.md`); an all-Fine report hides the empty top-3 section; no duplicated fleet note.
 - Consistency between runs: repeated corrections count separate occasions (6+ hours apart), so one long session is
   never "repeated"; fix candidates carry the incidents and days of use after them, and "improving" needs no incident
   after the fix and 2+ later days; an explicit decision procedure for shared causes, merging, normal iteration and
   status overrides (`criteria.md` §5).
-- Judging: `--auto` picks the mode per bot from the share of its user messages in Latin letters (printed per bot);
-  `--list` shows each bot message once; labels.tsv has fixed columns with a `user_start` check against off-by-one
+- Judging: `--list` shows each bot message once; labels.tsv has fixed columns with a `user_start` check against off-by-one
   mistakes and a `promised` column (in-chat promises become fix candidates); unlisted items are `none`.
 - finalize: leftover skeleton placeholders and English `ui` labels are flagged in a non-English report; an evidence line
-  with both quote and text is an error. Skeleton quotes whole sentences and uses one date format.
+  with both quote and text is an error.
 - A request that is the last message in the data isn't counted as unanswered; replay skips only a recorded `self`.
 - A fixed recipe for the chat message and the follow-up question; scratch files go in `$W/tmp`.
 - Iteration 3: a decisive shared-cause test (a specific rule naming what to check; generic "confirm more" rules never
@@ -93,3 +92,9 @@
   lessons from its repeated corrections; file paths with spaces are recognised; new low-priority leads for stalls
   (several short nudges, no reply) and replies in another language than the chat's; no hand-off format for
   machine-made templates or one fan-out burst; report rows in status order and long bot names wrap.
+- Iteration 10 (slim): the scripts output facts only (counts, dates, gaps, routine stats, exact resends and repeats,
+  group-turn copies, bot-to-bot and pasted-answer stats, writing systems, memory facts) with message ids; the cue lists,
+  status rules and draft findings are gone, so the host bot decides every status and finding. `finalize` enforces
+  structure and safety: a row and a status per bot, never red for a bot the user said to keep, exactly one clean-up item
+  on red bots only, and every finding cites a real message id (`ref`) whose words match its quote.
+  `judge_inputs.py --digest` lists every typed message compactly; `--all` and `--auto` remain as no-ops.

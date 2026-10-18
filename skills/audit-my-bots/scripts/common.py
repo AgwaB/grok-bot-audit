@@ -131,9 +131,6 @@ def grams(t):
     t = re.sub(r'\s+', '', norm(t).lower())
     return {t[i:i + 2] for i in range(len(t) - 1)}
 
-def jaccard(a, b):
-    return len(a & b) / max(1, len(a | b))
-
 def load_json(p, default=None):
     if p and os.path.exists(p):
         with open(p, encoding='utf-8') as fh:
@@ -145,34 +142,26 @@ def dump_json(obj, p):
     with open(p, 'w', encoding='utf-8') as fh:
         json.dump(obj, fh, ensure_ascii=False, indent=1)
 
-# ---------- cue phrases ----------
-# A minimal English fallback so the pipeline runs without input; nothing here is a rule for one language. For chats not mostly in English the host bot
-# judges every reply itself (judge_inputs.py --all) and may write W/cues.json with the same keys (added to these).
-# See references/cues.md.
-CUES_EN = {
-    'directive': [r"\bno\b", r"\bnot (that|this|what)\b", r"\binstead\b", r"\bdon'?t\b", r"\bdo not\b", r"\bstop\b",
-                  r"\bwrong\b", r"\bisn'?t\b", r"\bthat'?s not\b", r"\bi meant\b", r"\bi asked\b",
-                  r"\btoo (long|short|much|many|formal|casual|complex|vague)\b", r"\balready\b", r"\bshorter\b", r"\bsimpler\b",
-                  r"\bwhy didn'?t\b", r"\byou said\b", r"\bactually\b", r"\bagain\b", r"\bfrom now on\b",
-                  r"\bplease (fix|change|remove)\b", r"\bremove\b", r"\bis that (all|right|correct)\b", r"\bare you sure\b"],
-    'fix': [r"from now on", r"i'?ll remember", r"i'?ve (saved|updated|noted)", r"saved (that|this|it)",
-            r"updated my (instructions|notes|guide|rules)", r"going forward"],
-    'promise': [r"i'?ll (let you know|send|get back|report back|follow up)", r"working on it", r"give me a (moment|minute)", r"in progress"],
-    'nudge': [r"^(hi|hello|hey)\b", r"^\?+$", r"^any update", r"^update\?", r"^status\?"],
-    'timely': [r"\b(currently|now|at the moment|as of)\b"],
-    # a standing safety boundary (ask first, never do X without approval), checked in memory facts only
-    'safety': [r"\bnever (send|delete|post|buy|pay|share|publish)", r"\bwithout (asking|approval|permission|my ok)",
-               r"\bask (me )?(first|before)", r"\bconfirm before", r"\bdon'?t (send|delete|post|buy|pay|share) .*without"],
-}
-# Language-neutral checks run next to these lists, so chats in other languages are not left out: memory facts that
-# carry a past date, promises followed by a short check-in after a long silence, and the share of Latin letters
-# (with code, paths and accented letters handled) that picks the judge mode. See references/cues.md.
+# ---------- message ids ----------
+FMT = '%Y-%m-%d %H:%M'
+P = lambda s: dt.datetime.strptime(s, FMT)
+RESEND_MIN = 30   # the same text sent again this soon is a resend (one request)
 
-def load_cues(work):
-    """Compiled cue patterns: English plus W/cues.json (if the host bot wrote one). Returns (patterns, has_custom)."""
-    extra = load_json(os.path.join(work, 'cues.json'), {}) if work else {}
-    pats = {}
-    for k, base in CUES_EN.items():
-        frags = list(base) + [str(x) for x in (extra.get(k) or []) if str(x).strip()]
-        pats[k] = re.compile('(' + '|'.join(f'(?:{f})' for f in frags) + ')', re.I | re.M)
-    return pats, bool(extra)
+def short_ids(ids):
+    """{bot id: shortest prefix (4+ characters) that no other bot id starts with}. A message id ("ref") is
+    "<prefix>:<i>", i = the event's index in that bot's timeline."""
+    ids = list(ids); out = {}
+    for x in ids:
+        n = min(4, len(x))
+        while n < len(x) and any(y != x and y.startswith(x[:n]) for y in ids): n += 1
+        out[x] = x[:n]
+    return out
+
+def resolve_ref(ref, tls):
+    """(timeline, event) for a message id "<bot id or unique prefix>:<i>", or (None, None)."""
+    bid, _, i = str(ref or '').rpartition(':')
+    if not bid or not i.isdigit(): return None, None
+    hits = [tl for k, tl in tls.items() if k == bid] or [tl for k, tl in tls.items() if len(bid) >= 4 and k.startswith(bid)]
+    if len(hits) != 1: return None, None
+    ev = next((e for e in hits[0]['events'] if e.get('i') == int(i)), None)
+    return (hits[0], ev) if ev else (None, None)

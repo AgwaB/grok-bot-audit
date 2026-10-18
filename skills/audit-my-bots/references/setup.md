@@ -1,22 +1,21 @@
 # Setup checks (groups, hand-offs, plugins, safety rules, routines)
 
 Beyond each bot, the audit looks at how the bots are set up. These items come only from what the saved chats show;
-when the evidence isn't there, say nothing. They never change a bot's status. `build_findings.py skeleton` drafts
-them in `fleet` with a `kind`; the report shows them in their own section (`ui.setup`, `ui.setup_h`, `ui.setup_iss`:
-write those labels too). The scripts set which items exist and their evidence; you write every word, in the user's
-language, and you may delete an item that reading the chats doesn't confirm.
+when the evidence isn't there, say nothing. They never change a bot's status. You add them to
+`fleet` with a `kind` when the facts and the chats show the need; the report shows them in their own section
+(`ui.setup`, `ui.setup_h`, `ui.setup_iss`: write those labels too). Every word is yours, in the user's language.
 
 Use only the app paths named here (from the product docs). Never invent a menu, button or setting.
 
 ## Kinds
-| kind | found when (diagnostics.py) | what to propose |
+| kind | facts to start from (diag.json) | what to propose |
 |---|---|---|
-| `group` | the user pasted one bot's answer (the one it matches best) into another bot within 3 days, on 2+ days (`fleet.group_candidates`); bots already in a group chat together are skipped | one group chat per project with those bots (`group`: fill `project`, each member's `part`; keep `lead`, `order` and `blocked`) |
-| `handoff_format` | 3+ bot-to-bot messages from one bot to another that are long (median 600+ characters) or mostly repeat the one before (200+ characters), or pasted hand-offs of 400+ characters (`fleet.handoff_format_candidates`) | one fixed short hand-off format (`format`: goal, where, done when, waiting on) |
-| `redundant_groups` | two group chats with exactly the same bots (`fleet.redundant_groups`) | keep using one group for this work. Say which one was used last |
-| `connector` | the bot used the browser on a site that has a plugin in the app, on 2+ days, and doesn't already call that plugin (`connector_candidates`) | connect the plugin: steadier than clicking through the site, and the login stays off the shared computer |
-| `safety_rules` | a memory fact holds a safety boundary ("ask me before sending…"; `safety` cues, `cues.md`) (`memory_safety_rules`) | keep the memory, and also add the rule as an Auto-review rule, so it holds even when memory doesn't come up |
-| `routine_cost` | a routine runs about every 15 minutes or more often, or 24+ times a day with most runs silent or the same as the run before (`routine_cost`) | run less often, end quietly when nothing changed, and stop once the job is done (an end condition) |
+| `group` | `fleet.pasted_answers`: the user pasted one bot's answer into another bot within 3 days, on several days, and they share no group chat (`shared_groups` empty) | one group chat per project with those bots (`group`: `project`, `lead`, `order`, each member's `part`, `blocked`: `ask_user`) |
+| `handoff_format` | `fleet.bot_to_bot` (messages per pair, median length, `same_headings`, `within_15_min_share`) and long `pasted_answers` | one fixed short hand-off format (`format`: goal, where, done when, waiting on). Not for a machine-made template (same headings) or one fan-out burst |
+| `redundant_groups` | `fleet.same_member_groups`: two group chats with exactly the same bots | keep using one group for this work. Say which one was used last |
+| `connector` | `browser_sites`: the bot used the browser on a site that has a plugin in the app, on 2+ days, and doesn't call that plugin (`plugin_used` false) | connect the plugin: steadier than clicking through the site, and the login stays off the shared computer |
+| `safety_rules` | `memory.facts`: a fact that holds a safety boundary ("ask me before sending...") | keep the memory, and also add the rule as an Auto-review rule, so it holds even when memory doesn't come up |
+| `routine_cost` | `routines`: `median_gap_min`, `runs_per_day_last7`, `max_runs_per_day`, `no_reply_or_same` (share of runs with no reply or the same reply as the run before) | when it runs far more often than its job needs: run less often, end quietly when nothing changed, and stop once the job is done |
 
 ## How the user does it (give these steps; you can't do them for the user)
 - **Group chat:** one group per project. If the pasted hand-offs cover more than one project, propose one group for
@@ -29,9 +28,8 @@ Use only the app paths named here (from the product docs). Never invent a menu, 
   achieve), where (paths, links or the file to use), done when (how the next bot knows it is finished), waiting on
   (what is still needed, or "nothing"). The user sends it to each bot named in the evidence as a message to remember,
   or puts it in the group's first message. Hand-offs then carry these lines instead of long or repeated text.
-- **Rule review routine** (a correction finding's optional `review`, set by the skeleton when a fix candidate had an
-  incident of that group after it, `came_back_candidate`): keep it only if you confirmed that a fix about this problem
-  came back; then write `review.copy`, else delete `review` (finalize drops it if left empty). It is offered next to
+- **Rule review routine** (a correction finding's optional `review`: `{"cadence_days": 14, "copy": "..."}`): add it only
+  when you confirmed that a fix about this problem came back (finalize drops it if `copy` is empty). It is offered next to
   the rule text, as its own option right after that finding's option. If picked, ask that bot in chat to set up the
   routine (say what and when). Low cadence (`review.cadence_days`, every two weeks, or monthly). Its text: look at the chats since the last review for corrections about
   this kind of mistake; if there is none, end without a message; if there is, send the user a short note with the

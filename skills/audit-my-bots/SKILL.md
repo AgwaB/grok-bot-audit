@@ -11,7 +11,7 @@ description: Audit the user's Grok Bots from their own chat history and produce 
 - No ReadTranscript? Stop: tell the user the audit can't run here, to ask a bot that has it. Don't try another way.
 - A background helper may be used, if at all, only for the later file-only steps (5 to 7), never for fetching or judging.
 
-The bundled scripts do the counting; you do the judging and the writing.
+The bundled scripts do the reading, counting and checking; you do all the judging and the writing.
 
 **Shape is fixed, words are yours.** The scripts own the structure: sections, table, order, scores, quote checks and
 the HTML/PDF layout. You write everything the user reads (chat messages and the whole report: text, labels, dates,
@@ -81,15 +81,12 @@ python3 "$SKILL/scripts/sessions.py" parse --work "$W"
 If it warns that pages don't reach the start or the end, fetch the missing pages before going on. Each bot's
 messages are now in `$W/timelines/<id>.json` (`events`: role, ts, text), if you need more context later.
 
-## 3. Find correction candidates
+## 3. Export the messages to judge
 ```bash
-python3 "$SKILL/scripts/judge_inputs.py" --work "$W" --auto
+python3 "$SKILL/scripts/judge_inputs.py" --work "$W"
 ```
-`--auto` picks per bot: the built-in cue phrases are a small English list, so a bot gets every reply exported unless
-8 in 10 of its user messages are plain Latin letters (code and links aside, few accents). Each bot's line prints the
-mode and why. Over 400 items: you may write `$W/cues.json` and rerun without `--auto` (`$SKILL/references/cues.md`).
-
-## 4. Judge every candidate
+Every typed reply after a bot message, in any language, is a numbered item (no word filter: you judge each one).
+## 4. Judge every item
 Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. Work in batches:
 1. `judge_inputs.py --work "$W" --list --short --from 1` prints one batch of about 10 KB (how many items depends on the
    chats) and its last line gives the `--from` of the next batch; `--show <n>` prints an item's full messages.
@@ -98,28 +95,31 @@ Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. 
 3. `judge_inputs.py --work "$W" --label "$W/labels.tsv"`: it echoes each line with the item's user text. A refused line
    (`user_start` mismatch = off by one) must be fixed before the next batch.
 
-No corrections or preferences: leave `labels.tsv` empty and still run `--label`. No candidates: `labels.json` is `{}`.
+No corrections or preferences: leave `labels.tsv` empty and still run `--label`.
 
-## 5. Run the checks
+## 5. Get the facts
 ```bash
 python3 "$SKILL/scripts/diagnostics.py" --work "$W"
+python3 "$SKILL/scripts/judge_inputs.py" --work "$W" --digest --from 1
 python3 "$SKILL/scripts/build_findings.py" skeleton --work "$W" --lang "<BCP 47 code of the language the user writes to you in; en if unclear>"
 ```
+`diag.json` holds facts only (dates, gaps, counts, routine runs, waits, exact repeats, pasted answers, memory facts, and
+your labels grouped and counted); nothing in it is a verdict. The digest lists every typed message of every bot, one
+line each with its message id (`ref`, e.g. `a1b2:57`); read all its batches (`--from` from its last line) to see
+repeated requests and overlap between bots. The skeleton is a frame: every status and `issue` is `TODO`, no findings.
 
-## 6. Write the findings
+## 6. Decide and write the findings
 Read `$SKILL/references/criteria.md`, `findings-schema.md`, `writing.md` and `setup.md`, then edit `$W/findings_draft.json`:
-- **Groups and status:** follow the decision procedure in `criteria.md` §5 step by step (shared cause and its paste
-  test, merging, normal iteration, status). Resolve each `fix_check` as `writing.md` says. Set `issue` and `why` for every bot.
-- **Words:** replace every placeholder and `TODO` (titles, fixes, `copy`, `issue`, `why`, `ui` labels, `date_label`) with
-  plain wording in the user's language; a `fix` says what the user can do or what is applied if they pick it. `copy`
-  goes into that bot: write it in the language the user uses with that bot (routine text: `writing.md`).
-- **Quotes:** word for word in `quote.orig`; add `translation` when the chat's language differs from the report's.
-- **Leads:** check `leads` (stale memory, promises, stalls, skipped questions, chat language, the same request in several
-  bots, other bots' jobs) and any safety event you saw in the chats. Add an item only for what you confirm by reading (`writing.md`).
+- **Status:** decide each bot's status yourself from the facts and the chats with `criteria.md` §2 and §5. Set `issue`
+  and `why` for every bot. A bot the user said to keep (`user_keep` in diag) is never Clean up.
+- **Findings:** add only what you confirm by reading (`criteria.md` §4, `writing.md`): repeated corrections with a
+  shared cause, repeated requests, stale memory, promises not kept, unanswered requests, chat language, overlap, setup
+  items (`setup.md`), safety events. Each needs evidence with at least one `ref` (a message id from diag, the judge
+  list or the digest). A Clean up bot has exactly one finding with `"cleanup": true`.
+- **Words:** plain, in the user's language; a `fix` says what the user can do or what is applied if picked. `copy` is in
+  the language the user uses with that bot. **Quotes:** word for word from the message named by `ref` (+ `translation`).
 - **Shared causes:** one fleet item per cross-bot cause; each bot points to it with `"see": "fleet-N"`.
-- **Setup items** (`kind` group, connector, safety_rules, routine_cost…): confirm or delete each by reading (`setup.md`).
-- **Opening sentence:** rewrite the `ui.lede_*` key the final statuses will use (`writing.md`) before finalize.
-- **Review flags:** remove `needs_review`. Then:
+- **Keep item and opening sentence:** rewrite the fleet keep item and the `ui.lede_*` key for the final statuses; remove `needs_review`.
 ```bash
 python3 "$SKILL/scripts/build_findings.py" finalize --work "$W" --strict
 ```

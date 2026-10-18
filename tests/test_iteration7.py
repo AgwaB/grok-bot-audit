@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Regression tests for iteration 7 (synthetic replays: fake bots, fake text). Run: python3 tests/test_iteration7.py [--keep]
 
-A. a stopped habit (used regularly, now idle far beyond its rhythm) is a clean-up candidate whatever its share; an
-   active routine, a slow steady rhythm, hand-offs from other bots or a bot too new to judge still keep a bot
-B. bot-to-bot messages are parsed (sender and text); long or repetitive hand-offs suggest one short fixed format
-   (goal, where, done when, waiting on); short varied ones don't
-C. a repeated mistake that came back after a fix candidate gets an optional rule-review routine next to the rule
-   text (empty until the host writes it; dropped if left empty)
-D. group suggestions are one group per project (separate chains -> separate groups), each with a lead, the members
-   in order and a "blocked -> ask the user" step; finalize refuses a group left without them
+A. rhythm facts: a stopped habit shows active days, a short typical gap and a long idle; a routine or hand-offs
+   from other bots count as use
+B. bot-to-bot messages are parsed (sender and text) and listed per pair with their length
+C. a fix with a later incident is listed with incidents_after; a written rule-review routine is kept and rendered,
+   an empty one is dropped
+D. pasted answers are listed per pair (two chains -> two pairs); finalize refuses a group item without project,
+   lead, parts and "blocked -> ask the user"
 E. documentation: setup.md describes the three items with documented app paths; SKILL.md stays within 172 lines
 """
 import json, os, re, shutil, subprocess, sys, tempfile
@@ -32,11 +31,12 @@ def test_faded(root):
     small = [x for d in range(0, 20) for x in ((d, 12, 0, 'u', f'Everyday fake question {d}'), (d, 12, 1, 'b', 'Ok. [fake]'))] + \
             [x for d in range(20, 58, 2) for x in ((d, 12, 0, 'u', f'Everyday fake question {d}'), (d, 12, 1, 'b', 'Ok. [fake]'))]
     W, B, *_ = fleet(root, 'faded', {'Habit': habit, 'Monthly': monthly, 'Routine Habit': routine, 'Main': small}, NOW)
-    check(B['Habit']['share'] >= 0.05 and B['Habit']['faded'] and B['Habit']['status_suggested'] == 'red',
-          'A. a stopped daily habit is a clean-up candidate even with a large share')
-    check(B['Monthly']['status_suggested'] == 'green' and not B['Monthly']['faded'], 'A. a monthly rhythm is not a stopped habit')
-    check(B['Routine Habit']['status_suggested'] == 'green', 'A. a stopped typing habit whose routine still runs is kept')
-    check(B['Main']['status_suggested'] == 'green', 'A. a bot in steady use is not affected')
+    h = B['Habit']
+    check(h['share'] >= 0.05 and h['active_days'] == 11 and h['typical_gap_days'] == 1 and h['idle_days'] > 40,
+          'A. a stopped daily habit: 11 active days, a 1-day rhythm and 46 idle days are facts (share not a factor)')
+    check(B['Monthly']['typical_gap_days'] == 28, 'A. a monthly rhythm shows as a 28-day typical gap')
+    check(B['Routine Habit']['idle_days'] < 1 and B['Routine Habit']['idle_typed_days'] > 40, 'A. a stopped typing habit whose routine still runs is not idle')
+    check(B['Main']['idle_days'] < 2, 'A. a bot in steady use is not idle')
 
 def hidden_script(script):
     """Turn ('agent', sender, body) items into hidden prompts via the routine slot of t6.convo."""
@@ -82,43 +82,31 @@ def test_handoff_rule_review_groups(root):
     ag = [e for e in tl['events'] if e.get('kind') == 'agent']
     check(len(ag) == 7 and ag[0]['sender'] == 'Drafter' and ag[0]['text'].startswith('Status for the launch page'),
           'B. bot-to-bot messages keep the sender and the message text')
-    check(B['Reviewer']['handoffs_received'] == 7 and B['Reviewer']['status_suggested'] == 'green',
+    check(B['Reviewer']['handoffs_received'] == 7 and B['Reviewer']['idle_days'] < 30,
           'A/B. a bot that only works on other bots\' hand-offs counts as in use')
-    hf = diag['fleet']['handoff_format_candidates']
-    check([(h['src_name'], h['to_name'], h['via']) for h in hf] == [('Drafter', 'Reviewer', 'bot_message')], 'B. long repeated hand-offs are flagged; short varied ones are not')
-    item = next((f for f in draft['fleet'] if f.get('kind') == 'handoff_format'), None)
-    check(item and item['format'] == ['goal', 'where', 'done_when', 'waiting_on'], 'B. the hand-off item carries the four-field format')
-    g = B['Tutor']['groups']['format_length']
-    tf = next(f for b in draft['bots'] if b['name'] == 'Tutor' for f in b['findings'] if f.get('topic') == 'format_length')
-    check(g['came_back_candidate'] and tf.get('review') == {'cadence_days': 14, 'copy': ''},
-          'C. a mistake that came back after a fix candidate gets an optional review routine next to the rule text')
-    check(not any('review' in f for b in draft['bots'] if b['name'] != 'Tutor' for f in b['findings']), 'C. no review routine without a came-back group')
-    groups = [f for f in draft['fleet'] if f.get('kind') == 'group']
-    sets = sorted(sorted(f['group']['order']) for f in groups)
-    check(sets == [['Finder', 'Planner'], ['Scout', 'Scribe']], 'D. two separate chains become two groups (one per project)')
-    check(all(f['group']['lead'] == f['group']['order'][0] and f['group']['blocked'] == 'ask_user' and
-              [m['bot'] for m in f['group']['members']] == f['group']['order'] for f in groups),
-          'D. each group has a lead (first in the chain), its members in order and a blocked -> ask the user step')
-    # finalize: refuses unfilled group structure and an unconfirmed rule review
-    for b in draft['bots']:
-        b.pop('needs_review', None); b['issue'] = 'Fine'
-        for f in b['findings']:
-            f.pop('needs_review', None); f.pop('fix_check', None)
-            for k in ('fix', 'short', 'title'):
-                if 'TODO' in str(f.get(k, '')): f[k] = 'Test text (fake).'
-    for f in draft['fleet']:
-        f.pop('needs_review', None)
-        for k in ('fix', 'short', 'title'):
-            if 'TODO' in str(f.get(k, '')): f[k] = 'Test text (fake).'
-        if isinstance(f.get('copy'), str) and 'TODO' in f['copy']: f['copy'] = 'Test copy (fake).'
-        if isinstance(f.get('copy'), list):
-            for x in f['copy']: x['text'] = 'Test copy (fake).'
-    draft['date_label'] = 'April 27, 2030'
-    json.dump(draft, open(W + '/findings_draft.json', 'w'))
+    bb = {(h['src'], h['to']): h for h in diag['fleet']['bot_to_bot']}
+    check(bb[('Drafter', 'Reviewer')]['median_chars'] > 600 and bb[('Pinger', 'Reviewer')]['median_chars'] < 60 and bb[('Drafter', 'Reviewer')]['refs'],
+          'B. bot-to-bot messages are listed per pair with length and refs')
+    g = B['Tutor']['correction_topics']['format_length']
+    check(g['incidents'] == 3 and g['occasions'] == 3, 'C. three corrections on three occasions are counted')
+    pairs = sorted((p['src'], p['to']) for p in diag['fleet']['pasted_answers'])
+    check(pairs == [('Finder', 'Planner'), ('Scout', 'Scribe')], 'D. two separate chains are two pasted-answer pairs')
+    import helpers
+    sc = dict(impact=2, confidence='medium', effort=2, reversibility=1.0, basis='test')
+    groups = [dict(kind='group', title=f'Group {p[0]} (test)', now=[dict(date='', ref=x['examples'][0]['ref'], text='Pasted (test)')],
+                   group=dict(project='TODO project name', lead=p[0], order=list(p), members=[dict(bot=n, part='TODO part') for n in p], blocked='ask_user'),
+                   fix='Test text (fake).', copy='Test copy (fake).', copy_kind='group', short='Test (fake)', score=sc)
+              for x in diag['fleet']['pasted_answers'] for p in [(x['src'], x['to'])]]
+    hf = dict(kind='handoff_format', title='Long hand-offs (test)', format=['goal', 'where', 'done_when', 'waiting_on'],
+              now=[dict(date='', ref=bb[('Drafter', 'Reviewer')]['refs'][0], text='Long (test)')], fix='Test text (fake).', copy='Test copy (fake).',
+              copy_kind='memory', short='Test (fake)', score=dict(sc, effort=1))
+    tref = g['refs'][0]
+    tf = helpers.finding('Quiz length (test)', tref, 'Too many questions again, five max', review=dict(cadence_days=14, copy=''))
+    other = helpers.finding('Other (test)', helpers.any_ref(W, 'Main'), review=dict(cadence_days=14, copy=''))
+    draft = helpers.fill(W, findings={'Tutor': [tf], 'Main': [other]}, fleet=groups + [hf])
     r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
     check(r.returncode != 0 and 'blocked = ask_user' in r.stdout, 'D. finalize --strict refuses a group without project and parts')
-    tf2 = next(f for b in draft['bots'] if b['name'] == 'Tutor' for f in b['findings'] if f.get('topic') == 'format_length')
-    tf2['review']['copy'] = 'Every two weeks: check new corrections about quiz length; if none, end quietly. (fake)'
+    next(b for b in draft['bots'] if b['name'] == 'Tutor')['findings'][0]['review']['copy'] = 'Every two weeks: check new corrections about quiz length; if none, end quietly. (fake)'
     for f in draft['fleet']:
         if f.get('kind') == 'group':
             f['group']['project'] = 'Fake project'

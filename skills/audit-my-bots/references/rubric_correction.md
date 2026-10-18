@@ -26,7 +26,7 @@ next_bot: the bot's reply after it (may be empty if it never answered)
   passwords) into it.
 - `fix_promised` (optional) is true when `next_bot` promises a lasting change ("from now on I'll…", in any language).
 - `promise_later` (optional) is true when `next_bot` promises to do or send something later on its own ("I'll send it
-  when it's ready", in any language). diagnostics lists these as promise leads; you then read whether it was delivered.
+  when it's ready", in any language). diagnostics lists these with the user's next message; you then read whether it was delivered.
 
 ## Recording verdicts (labels.tsv)
 One line per **correction, preference, keep or ack** (and any item whose reply promises something later); every other

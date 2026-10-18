@@ -3,17 +3,18 @@
 Run: python3 tests/test_regressions.py [--keep]
 
  1. fetching: save-page takes several pages (several bots) in one call; replay copies pre-saved pages
- 2. languages: without cues, a non-English correction is only found with --all
+ 2. languages: every typed reply after a bot message is a judge item (no word lists), in any language
  3. judge context: long messages keep their start and end; --show prints the full messages
- 4. app notices: attachment notices and file paths are stripped (no false similar requests or routines, never quoted)
- 5. skipped questions: the lead carries the question texts
+ 4. app notices: attachment notices and file paths are stripped (no false repeats or shared text, never quoted)
+ 5. skipped questions: the facts carry the question texts
  6. copy per bot: "copy" as a list of {bot, text} is checked and rendered
  7. counts: the Proposals column excludes "see" pointers and shows them separately
  8. memory/description quotes: allowed with "source", labelled; paths never allowed
  iteration 1 of the skill eval:
- 9. an unrelated memory save is only a fix candidate: no change to status or impact; --strict wants it resolved
+ 9. a memory save is listed as a fix with the corrections after it (the host judges whether it fixed anything)
 10. judge inputs carry question cards and the exchange's request; --list and --label (TSV) work; replay --self
-11. an all-Fine report has no empty top-3 section and no built-in fleet note; own unanswered requests are an info item
+11. an all-Fine report has no empty top-3 section and no built-in fleet note; unanswered last requests are a fact;
+    --strict refuses a TODO status or date_label
 """
 import json, os, re, shutil, subprocess, sys, tempfile, datetime as dt
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
@@ -120,11 +121,9 @@ def main():
         # 2. languages
         r = run(f'{S}/judge_inputs.py', '--work', W)
         ji = json.load(open(f'{W}/judge_inputs.json'))
-        check(KO_FIX in {x['user'] for x in ji} and f'{NAMES[C]}: 1 items, mode used: all (no cue matched' in r.stdout,
-              '2/3. a bot with no cue match gets all its replies judged (no --all needed)')
+        check(KO_FIX in {x['user'] for x in ji} and 'Daily Helper: 1 items' in r.stdout, '2. a non-English correction is a judge item without word lists')
         run(f'{S}/judge_inputs.py', '--work', W, '--all')
-        ji = json.load(open(f'{W}/judge_inputs.json'))
-        check(KO_FIX in {x['user'] for x in ji}, '2. --all exports it')
+        check(json.load(open(f'{W}/judge_inputs.json')) == ji, '2. --all is accepted and changes nothing')
         check(not any(x['user'] == '' or 'attached a file' in x['user'] for x in ji), '4. attachment-only messages are not judge candidates')
         # 3. judge context
         it = next(x for x in ji if x['user'].startswith('You forgot the deadline'))
@@ -153,47 +152,37 @@ def main():
         run(f'{S}/diagnostics.py', '--work', W)
         d = json.load(open(f'{W}/diag.json'))
         check(d['now'] == '2030-03-11 09:00', '1. diagnostics uses the replay date')
-        check(not d['fleet']['similar_requests_candidates'], '4. no false "same request in several bots" from attachment notices')
-        check(not d['bots'][A]['repeated_requests'], '4. no false routine candidate from attachment notices')
-        g = d['bots'][D]['groups']['format_length']; fxt = {f['id']: f for f in d['bots'][D]['fix_candidates']}
-        check(d['bots'][D]['status_suggested'] == 'yellow' and 'possibly_fixed' not in g
-              and any('email' in fxt[c['id']]['text'] for c in g['fix_candidates']), '9. an unrelated memory save is a fix candidate, not a fix')
-        # 5. skipped questions
+        check(not d['fleet']['same_text_in_bots'] and not d['bots'][A]['repeated_texts'], '4. no false shared text or repeat from attachment notices')
+        g = d['bots'][D]['correction_topics']['format_length']
+        check(g['incidents'] == 3 and len(g['refs']) == 3 and d['bots'][D]['fixes'][0]['kind'] == 'memory_write'
+              and g['fixes_after'][0]['incidents_after'] == 2 and 'email' in d['bots'][D]['fixes'][0]['text'],
+              '9. a memory save is a fix fact with the corrections after it counted')
+        sq = d['bots'][A]['skipped_questions']
+        check(sq['count'] == 3 and any('crop' in q for q in sq['questions']), '5. skipped questions carry count and texts')
+        check(d['bots'][A]['unanswered_at_end'] and d['bots'][B]['description_empty'] and not d['bots'][A]['description_empty'],
+              '11. unanswered last requests and empty descriptions are facts')
         run(f'{S}/build_findings.py', 'skeleton', '--work', W, '--lang', 'en')
         dr = json.load(open(f'{W}/findings_draft.json'))
-        sq = dr['leads']['skipped_questions'].get(A, {})
-        check(sq.get('count') == 3 and any('crop' in q for q in sq.get('questions', [])), '5. skipped-question lead carries count and questions')
-        md = next(b for b in dr['bots'] if b['id'] == D)
-        mf_ = next(f for f in md['findings'] if f.get('topic') == 'format_length')
-        check(mf_['score']['impact'] == 2 and mf_.get('fix_check') and 'email' in json.dumps(md.get('fix_candidates')) and 'came back' not in mf_['score']['basis'],
-              '9. the skeleton leaves fix candidates in fix_check without raising impact')
-        check(any(f.get('info') and f['now'] and f['now'][0]['quote']['orig'] == 'Any mail from the bank?' for f in md['findings']),
-              '11. an unanswered request (no fleet outage) is an info item')
-        check(dr['date_label'].startswith('TODO'), '11. the skeleton leaves date_label for the bot to write')
-        fl = next(f for f in dr['fleet'] if f.get('kind') == 'job_text')
-        check(isinstance(fl['copy'], list) and {x['bot'] for x in fl['copy']} == {NAMES[B], NAMES[C]}, '6. skeleton drafts per-bot copy for a shared job-text item')
-        # host bot edits
-        json.dump(dr, open(f'{W}/findings_draft.json', 'w'))
+        check(dr['date_label'].startswith('TODO') and all(b['status'] == 'TODO' and not b['findings'] for b in dr['bots']),
+              '11. the skeleton leaves statuses, findings and date_label for the bot to write')
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
-        check(r.returncode != 0 and 'fix_check not resolved' in r.stdout and 'date_label still has TODO' in r.stdout,
-              '9/11. --strict refuses unresolved fix_check and a TODO date_label')
-        dr['date_label'] = 'March 11, 2030'
-        for b in dr['bots']:
-            b['issue'] = 'Test issue'; b.pop('needs_review', None)
-            for f in b['findings']: f.pop('needs_review', None); f.pop('fix_check', None)
-        for f in dr['fleet']: f.pop('needs_review', None)
-        for x in fl['copy']: x['text'] = f'Test description for {x["bot"]} (fake).'
-        ba = next(b for b in dr['bots'] if b['id'] == A)
-        ba['findings'].append(dict(title='Asks which step to take next', fix='Go ahead with the recommended option (test).',
-                                   copy='Go ahead with the recommended option and say what you did.', copy_kind='memory',
-                                   now=[dict(date='03/06', who='Bot', quote={'orig': 'Shall I also crop it?'}),
-                                        dict(date='', source='description', quote={'orig': 'Edits photos.'})],
-                                   score=dict(impact=1, confidence='medium', effort=1, reversibility=1.0, basis='test')))
-        bb = next(b for b in dr['bots'] if b['id'] == B)
-        bb['findings'].append(dict(title='Stale fact in memory', fix='Update it (test).', copy='Shops on weekdays now.', copy_kind='memory',
-                                   now=[dict(date='02/20', source='memory', quote={'orig': 'The user currently shops on weekends.'})],
-                                   score=dict(impact=1, confidence='medium', effort=1, reversibility=1.0, basis='test')))
-        json.dump(dr, open(f'{W}/findings_draft.json', 'w'))
+        check(r.returncode != 0 and 'date_label still has TODO' in r.stdout and 'status' in r.stdout, '11. --strict refuses TODO statuses and date_label')
+        import helpers
+        RB = helpers.any_ref(W, B)
+        fl = dict(title='Job descriptions are empty', kind='job_text', fix='Paste a short description into each bot (test).',
+                  copy=[dict(bot=NAMES[x], text=f'Test description for {NAMES[x]} (fake).') for x in (B, C)],
+                  now=[dict(date='', ref=RB, text='2 bots have no description (test)')],
+                  score=dict(impact=1, confidence='high', effort=1, reversibility=1.0, basis='test'))
+        fa = dict(title='Asks which step to take next', fix='Go ahead with the recommended option (test).',
+                  copy='Go ahead with the recommended option and say what you did.', copy_kind='memory',
+                  now=[dict(date='03/06', who='Bot', ref=helpers.ref_of(W, A, 'Shall I also crop it?', role=None), quote={'orig': 'Shall I also crop it?'}),
+                       dict(date='', source='description', quote={'orig': 'Edits photos.'})],
+                  score=dict(impact=1, confidence='medium', effort=1, reversibility=1.0, basis='test'))
+        fb = dict(title='Stale fact in memory', fix='Update it (test).', copy='Shops on weekdays now.', copy_kind='memory',
+                  now=[dict(date='02/20', source='memory', ref=RB, quote={'orig': 'The user currently shops on weekends.'})],
+                  score=dict(impact=1, confidence='medium', effort=1, reversibility=1.0, basis='test'))
+        see = lambda x: dict(title='No job description', see='fleet-2', now=[dict(date='', ref=helpers.any_ref(W, x), text='The description is empty (test)')])
+        dr = helpers.fill(W, findings={NAMES[A]: [fa], NAMES[B]: [fb, see(B)], NAMES[C]: [see(C)]}, fleet=[fl])
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
         check(r.returncode == 0, '5/8. a skipped question, a memory fact and a description can be quoted (with "source")' + ('' if r.returncode == 0 else ': ' + r.stdout[-300:]))
         # negative cases on copies of the draft
@@ -202,13 +191,14 @@ def main():
             rr = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--draft', f'{W}/bad.json', ok=False)
             check(rr.returncode != 0 and needle in rr.stdout, msg)
         def b_of(x, bid): return next(b for b in x['bots'] if b['id'] == bid)
-        bad(lambda x: b_of(x, B)['findings'][-1]['now'][0].pop('source'), 'set "source"', '8. a memory quote without "source" is rejected with a hint')
+        bad(lambda x: b_of(x, B)['findings'][0]['now'][0].pop('source'), 'set "source"', '8. a memory quote without "source" is rejected with a hint')
         bad(lambda x: b_of(x, A)['findings'][-1]['now'].append(dict(date='', quote={'orig': 'Make this photo brighter ' + P1})),
             'file path', '4/8. a quote with a file path is rejected')
         bad(lambda x: b_of(x, A)['findings'][-1]['now'].append(dict(date='', quote={'orig': 'The user attached a file.'})),
             'app notice', '4. a quote of the attachment notice is rejected')
         bad(lambda x: next(f for f in x['fleet'] if f.get('kind') == 'job_text')['copy'].append({'text': 'no bot'}),
             '{"bot", "text"}', '6. a malformed per-bot copy list is rejected')
+        run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict')
         # 7. pointers; 6/8 rendering
         fz = json.load(open(f'{W}/findings.json'))
         run(f'{S}/make_report.py', f'{W}/findings.json', '--outdir', f'{W}/report', '--no-pdf')

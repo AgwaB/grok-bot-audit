@@ -3,17 +3,15 @@
 
 1. the time zone comes from any timestamped entry (a bot that only gets routine runs or messages from other bots), and a
    bot with no timestamps at all takes the fleet's zone (never UTC by default)
-2. messages the judge labelled as corrections are not also a "same request on many days" item; the same follow-up
-   after the bot's answers ("test it too") becomes a standing-rule draft (kind follow_up), not a routine
-3. a stopped habit has its own reason and clean-up title (any share), and its repeated corrections become optional
-   "if you come back to it" lessons in the clean-up item (dropped when left empty, rendered when written)
+2. the same text on several days is an exact repeat with its days and refs (the host decides what it is)
+3. a clean-up item's optional "if you come back to it" lessons are dropped when left empty, rendered when written
 4. days of use are counted by working session: late-night work past midnight is one day
 5. file paths with spaces in folder or file names are recognised (never quoted, stripped from similarity)
-6. stall lead: 3+ short user messages in a row with no reply, over 10+ minutes; quick bursts and group chats are not stalls
-7. hand-off format: skipped for a machine-made template or one fan-out burst, kept for long free-form hand-offs
+6. 3+ user messages in a row with no reply are listed with their span; group-chat turns are not
+7. bot-to-bot facts: a machine-made template shows the same headings, a fan-out burst a high share within 15 minutes
 8. report rows in status order (needs work, clean-up, fine); long bot names wrap in the table
-9. chat-language lead (low priority): replies in another writing system than the chat's on 2+ days; not for one day,
-   code-mixed chats or a user who mostly writes the reply's language
+9. writing-system facts: replies in another script than the user's chat, with their days; none for code-mixed
+   chats or a user who mostly writes the reply's script
 D. documentation and limits (SKILL.md within 172 lines, references describe the new leads, no Hangul in the repo)
 """
 import glob, json, os, re, shutil, subprocess, sys, tempfile
@@ -54,16 +52,9 @@ def test_dedupe_followup(root):
         f += [(d, 14, 0, 'u', f'Change the fake parser number {d} to accept dates'), (d, 14, 1, 'b', 'Changed it. [fake]'),
               (d, 14, 5, 'u', 'Test it too, really run it'), (d, 14, 6, 'b', 'Ran the tests. [fake]')]
     W, B, diag, draft, _ = fleet(root, 'dedupe', {'Cook': s, 'Coder': f}, NOW, labels=cor)
-    reps = [e for r in B['Cook']['repeated_requests'] for e in r['examples']]
-    check(B['Cook']['groups']['format_length']['repeated'] and not any('Too long again' in e for e in reps),
-          '2. corrections in a correction group are not also a repeated-request item')
-    fu = [r for r in B['Coder']['repeated_requests'] if any('Test it too' in e for e in r['examples'])]
-    check(fu and fu[0]['follow_up'], '2. the same follow-up after the bot\'s answers is marked follow_up')
-    db = {b['name']: b for b in draft['bots']}
-    kinds = [(x.get('kind'), x.get('copy_kind')) for x in db['Coder']['findings']]
-    check(('follow_up', 'memory') in kinds and not any(k[1] == 'routine' and 'Test it too' in json.dumps(x)
-                                                         for k, x in zip(kinds, db['Coder']['findings'])),
-          f'2. a follow-up becomes a standing-rule draft, not a routine ({kinds})')
+    rt = [r for r in B['Coder']['repeated_texts'] if r['text'].startswith('Test it too')]
+    check(rt and len(rt[0]['days']) == 5 and len(rt[0]['refs']) == 5, '2. the same follow-up on 5 days is an exact repeat with days and refs')
+    check(B['Cook']['correction_topics']['format_length']['incidents'] == 4, '2. labelled corrections are counted in their topic')
 
 def test_stopped(root):
     habit = [x for d in range(0, 21, 2) for x in ((d, 19, 0, 'u', f'Log a fake ride of {d} km'), (d, 19, 1, 'b', 'Logged a very long story. [fake]'))]
@@ -72,16 +63,12 @@ def test_stopped(root):
         habit += [(d, 19, 3, 'u', f'Too long, just log it (number {i})'), (d, 19, 4, 'b', 'Shorter. [fake]')]
     W, B, diag, draft, _ = fleet(root, 'stopped', {'Main': t6.anchor() + [x for h in (8, 10, 15, 17, 20) for x in daily(f'Main{h}', range(0, 58), h=h)], 'Ride Log': habit}, NOW, labels=cor)
     b = B['Ride Log']
-    check(b['share'] < 0.05 and b['faded'] and b['status_reasons'][0].startswith('stopped'),
-          f"3. a stopped habit with a small share is 'stopped', not 'barely used' ({b['status_reasons'][0][:40]})")
-    db = {x['name']: x for x in draft['bots']}['Ride Log']
-    cu = db['findings'][0]
-    check(cu.get('cleanup') and cu['title'] == 'Stopped being used' and len(db['findings']) == 1,
-          '3. the clean-up item has its own title and is the bot\'s only finding')
-    check(cu.get('lessons') and cu['lessons'][0]['topic'] == 'format_length' and cu['lessons'][0]['copy'] == '',
-          '3. its repeated correction is an optional lesson with an empty copy')
-    # finalize drops an empty lesson; a written one is rendered under ui.lessons
-    d = json.loads(json.dumps(draft))
+    check(b['share'] < 0.05 and b['active_days'] == 11 and b['idle_days'] > 30, '3. a stopped habit: active days and idle are facts')
+    import helpers
+    cu = dict(title='Stopped being used (test)', cleanup=True, short='Show me how to clean up (test)', fix='See the keep item (test).',
+              now=[dict(date='', ref=b['last_request_ref'], text='Last request (test)')], score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='test'),
+              lessons=[dict(topic='format_length', title='Logs too long (test)', now=[dict(date='', text='3 times (test)')], copy='')])
+    d = helpers.fill(W, status={'Ride Log': 'red'}, findings={'Ride Log': [cu]})
     run(f'{S}/build_findings.py', 'finalize', '--work', W)
     fin = {x['name']: x for x in json.load(open(W + '/findings.json'))['bots']}['Ride Log']
     check('lessons' not in fin['findings'][0], '3. finalize drops lessons left empty')
@@ -121,11 +108,9 @@ def test_stall(root):
     grp = daily('Grp', range(0, 58), h=16)
     grp += [(32, 18, m, 'u', f'[Group chat: "Fake Team"] short note {m}') for m in (0, 10, 20, 30)] + [(32, 18, 40, 'b', 'Noted. [fake]')]
     W, B, *_ = fleet(root, 'stall', {'Memo': s, 'Quick': quick, 'Grp': grp}, NOW)
-    st = B['Memo']['stall_candidates']
-    check(len(st) == 1 and st[0]['answered'] and len(st[0]['texts']) == 3, f'6. three short nudges with no reply are a stall lead ({st})')
-    check(not B['Quick']['stall_candidates'] and not B['Grp']['stall_candidates'], '6. a quick burst or a group chat is not a stall')
-    draft = json.load(open(W + '/findings_draft.json'))
-    check(list(draft['leads']['stalls']) == [B['Memo']['id']] if 'id' in B['Memo'] else len(draft['leads']['stalls']) == 1, '6. stalls are listed in the draft leads')
+    st = B['Memo']['unanswered_runs']
+    check(len(st) == 1 and st[0]['messages'] == 3 and st[0]['minutes'] == 30 and st[0]['answered'], f'6. three messages with no reply are listed with their span ({st})')
+    check(B['Quick']['unanswered_runs'][0]['minutes'] <= 1 and not B['Grp']['unanswered_runs'], '6. a quick burst shows its short span; group-chat turns are left out')
 
 def test_handoff_templates(root):
     tmpl = ('# Task\nCollect fake sources for section {i}.\n\n# Stage\nstage=collect item={i}\n\n# Instructions\n'
@@ -137,17 +122,20 @@ def test_handoff_templates(root):
     editor = hidden_script([(d, 17, 0, 'agent', ('Scout', free + f' [fake {d}]')) for d in (40, 44, 48, 52)] + [(d, 17, 1, 'b', 'Editing. [fake]') for d in (40, 44, 48, 52)])
     W, B, diag, draft, _ = fleet(root, 'tmpl', {'Main': t6.anchor(), 'Worker': worker + daily('W', range(20, 58, 3)),
                                                 'Sink': burst + daily('S', range(20, 58, 3)), 'Editor': editor + daily('E', range(20, 58, 3))}, NOW)
-    pairs = [(h['src_name'], h['to_name']) for h in diag['fleet']['handoff_format_candidates']]
-    skipped = {h['src_name']: h['reason'] for h in diag['fleet']['handoff_format_skipped']}
-    check(('Scout', 'Editor') in pairs, '7. long free-form hand-offs still suggest a short format')
-    check(('Orchestrator', 'Worker') not in pairs and skipped.get('Orchestrator') == 'template', f'7. a machine-made template is skipped ({skipped})')
-    check(('Fanout', 'Sink') not in pairs and skipped.get('Fanout') == 'burst', '7. one fan-out burst is skipped')
+    bb = {(h['src'], h['to']): h for h in diag['fleet']['bot_to_bot']}
+    check(bb[('Orchestrator', 'Worker')]['same_headings'] and not bb[('Scout', 'Editor')]['same_headings'], '7. a machine-made template shows the same headings')
+    check(bb[('Fanout', 'Sink')]['within_15_min_share'] == 1.0 and bb[('Scout', 'Editor')]['within_15_min_share'] == 0, '7. a fan-out burst shows as messages within 15 minutes')
+    check(bb[('Scout', 'Editor')]['median_chars'] > 400, '7. long free-form hand-offs show their length')
 
 def test_sort_and_css(root):
     W, B, diag, draft, _ = fleet(root, 'sort', {'Main': t6.anchor(), 'Old One': daily('Old', (0, 1)),
                                                 'Wordy': daily('Wordy', range(0, 58), h=8) + [x for i, d in enumerate((10, 20, 30, 40))
                                                 for x in ((d, 8, 5, 'u', f'Way too wordy again, cut it (take {i})'), (d, 8, 6, 'b', 'Cut. [fake]'))]},
                                  NOW, labels={f'Way too wordy again, cut it (take {i})': 'format_length' for i in range(4)})
+    import helpers
+    helpers.fill(W, status={'Old One': 'red', 'Wordy': 'yellow'},
+                 findings={'Old One': [dict(title='Barely used (test)', cleanup=True, short='Clean up (test)', fix='Test (fake).', now=[dict(date='', ref=helpers.any_ref(W, 'Old One'), text='Last (test)')],
+                                            score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='t'))]})
     run(f'{S}/build_findings.py', 'finalize', '--work', W)
     order = [b['status'] for b in json.load(open(W + '/findings.json'))['bots']]
     check(order == ['yellow', 'red', 'green'], f'8. rows in status order: needs work, clean-up, fine ({order})')
@@ -166,18 +154,18 @@ def test_language(root):
     mixed = [x for d in range(0, 58) for x in ((d, 13, 0, 'u', f'Write a caption for fake photo {d} of the shop'), (d, 13, 1, 'b', f'Caption {d}: fresh and warm, made by hand today. [fake]'))]
     mixed += [x for d in (5, 15, 25) for x in ((d, 13, 3, 'u', '\ub108\ubb34 \ub531\ub531\ud574, \ud3b8\ud558\uac8c \uc368\uc918'), (d, 13, 4, 'b', 'Okay, here is a more casual caption for you. [fake]'))]
     W, B, *_ = fleet(root, 'lang', {'Memo': ja((8, 16, 24)), 'Once': ja((30,)), 'Coder': ko, 'Caption': mixed}, NOW)
-    lm = B['Memo']['language_mismatch']
-    check(lm and lm['chat_script'] == 'Japanese' and lm['reply_scripts'] == ['Latin'] and len(lm['days']) == 3, f'9. replies in another script on 3 days are a lead ({lm})')
-    check(not B['Once']['language_mismatch'], '9. one day is not a lead')
-    check(not B['Coder']['language_mismatch'], '9. a code-mixed Korean chat answered in Korean is not a lead')
-    check(not B['Caption']['language_mismatch'], '9. a user who mostly writes English, answered in English, is not a lead')
+    lm = B['Memo']['scripts']
+    check(lm['other_script_replies'] == 3 and len(lm['days']) == 3 and 'Japanese' in lm['user'], f'9. replies in another script on 3 days are listed ({lm})')
+    check(len(B['Once']['scripts']['days']) == 1, '9. one day is listed as one day')
+    check(not B['Coder']['scripts']['other_script_replies'], '9. a code-mixed Korean chat answered in Korean has none')
+    check(not B['Caption']['scripts']['other_script_replies'], '9. a user who mostly writes English, answered in English, has none')
 
 def test_docs():
     sk = open(os.path.join(SK, 'SKILL.md'), encoding='utf-8').read()
     check(len(sk.splitlines()) <= 172, f'D. SKILL.md within 172 lines ({len(sk.splitlines())})')
-    check('stalls' in sk and 'chat language' in sk, 'D. SKILL.md names the new leads')
+    check('unanswered requests' in sk and 'chat language' in sk and 'digest' in sk, 'D. SKILL.md names the checks and the digest')
     ref = ''.join(open(p, encoding='utf-8').read() for p in glob.glob(os.path.join(SK, 'references', '*.md')))
-    for w in ('Stalls', 'Chat language', 'follow_up', 'lessons', 'working session'):
+    for w in ('unanswered_runs', 'Chat language', 'follow_up', 'lessons', 'working session'):
         check(w in ref, f'D. references describe {w!r}')
     bad = [p for p in glob.glob(ROOT + '/**/*', recursive=True) if os.path.isfile(p) and not p.endswith(('.png', '.pyc'))
            and re.search('[\uac00-\ud7a3\u1100-\u11ff\u3130-\u318f]', open(p, encoding='utf-8', errors='ignore').read())]

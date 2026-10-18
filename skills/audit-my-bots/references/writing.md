@@ -1,46 +1,34 @@
 # Writing the findings
 
-How to turn `findings_draft.json` into the final findings. The schema is in `findings-schema.md`; the rules and
-thresholds are in `criteria.md`. Everything the reader sees is written by you in the user's language.
+How to turn `findings_draft.json` (a frame: rows with `TODO`, no findings) into the final findings. The schema is in
+`findings-schema.md`; what to judge is in `criteria.md`. Everything the reader sees is written by you in the user's language.
 
 ## Repeated-correction groups
-- Apply the decision procedure in `criteria.md` §5 in order (shared cause, merging, normal iteration, fixes, status).
-- **Kept group:** its `fix` and `copy` state the specific rule from §5 step 1 (it passes the paste test: it names
-  what to check in this bot's domain). The skeleton leaves `fix` as `TODO` where its only default would be generic.
-- **Dropped group:** delete the finding. If that group was the only reason for Needs work, set the bot to Fine and name
-  the §5 reason in `why`.
-- **`fix_check`:** ids of candidates (`{id, ts, incidents_after, active_days_after}`); their texts are in the bot's
-  `fix_candidates` list, once per bot. Most memory saves are about something else (an email address, a schedule).
-  Decide which candidates, if any, are about this group's problem; then the **latest** of those decides:
-  - `incidents_after` = 0 and `active_days_after` ≥ 2: fixed. Delete the finding and add one line to `improving` (what
-    was fixed, and when), even if an earlier fix had failed.
-  - `incidents_after` = 0 and `active_days_after` < 2: too early to tell. Keep the finding as if unfixed, set
-    `"too_early": true` (the report tags it with `ui.too_early`, e.g. "Too early to tell") and say in `fix` when the
-    rule was saved, for example "A rule was saved on 10/16; the next check will show whether it holds."
-  - `incidents_after` ≥ 1: came back. Keep the finding, add "came back after a fix" to `score.basis` and raise
-    `score.impact` by 1 (max 3). The `copy` must not repeat the rule that already failed; make it more specific.
-  - None is about this problem: ignore them.
-  - `fix_check_omitted` means more saves exist than are listed (none had an incident after it). If none of the listed
-    ones fits, look for the rest in `$W/timelines/<id>.json` (events with `kind` `memory_write`) in that time span.
-  - Then delete `fix_check` (finalize `--strict` refuses a draft that still has one). finalize drops `fix_candidates`.
+- Start from `correction_topics` in diag.json and apply the decision procedure in `criteria.md` §5 in order (shared
+  cause, merging, normal iteration, fixes, status).
+- **Kept group:** one finding; its evidence quotes the incidents (`refs`); its `fix` and `copy` state the specific rule
+  from §5 step 1 (it passes the paste test: it names what to check in this bot's domain).
+- **Fixes:** `fixes_after` lists saves and promised fixes by id (texts in the bot's `fixes`). Most memory saves are about
+  something else (an email address, a schedule). Decide which, if any, are about this problem; the **latest** decides:
+  fixed (no finding; one line in `improving`, what was fixed and when), too early (`"too_early": true`, and say in `fix`
+  when the rule was saved), or came back (add "came back after a fix" to `score.basis`, impact +1, and a `copy` more
+  specific than the rule that failed). `fixes_after_omitted` counts older saves with no incident after them; they are
+  in `$W/timelines/<id>.json` (events with `kind` `memory_write`).
 
 ## Status
-The suggested status comes from `criteria.md` §2; change it only for a reason listed in §5 step 5, named in `why` in
-one sentence.
+You set every status (`criteria.md` §2) and name the reason in `why`, one sentence.
 - **Fine bots:** `issue` is a neutral 2-6 word line ("Working well", "Nothing repeating"). Not a problem statement:
   a small proposal (for example, no saved job description) still belongs in the findings, not in the issue column.
-  A bot that is too new to judge (`too_new` in diag) says so in `issue` ("Too new to judge"); one kept by its routine
-  or its slow rhythm says why in `why` (the skeleton drafts it).
-- **Clean-up bots:** one finding (`"cleanup": true`) says why (usage facts); fold any other finding of that bot into it,
-  since the only thing offered is "Show me how to clean up X". A stopped habit's item says it was used regularly and
-  then stopped (dates and rhythm), not that it was barely used. Its repeated corrections are not proposals: the
-  skeleton moves them into the item's optional `lessons` ("if you come back to it"); write each `copy` as the rule to
-  save first if the user starts using the bot again, or delete the lesson (finalize drops empty ones). The skeleton sets its `short` to that line in English:
-  rewrite it in the user's language. That `short` is both its top-3 line and its one option (SKILL.md step 9). It may be in the top 3 like any finding (by value),
-  labelled with the clean-up wording. The shared job-text item skips clean-up bots on purpose: no text is written
-  for a bot you suggest removing. The fleet keep / clean-up item explains how; don't repeat
-  the how in each bot. No `copy` unless the bot's job should move to another bot: then `copy` is the text for that
-  other bot, with `copy_kind` `memory` (a message asking it to remember).
+  A bot that is quiet but still wanted (its routine runs, its slow rhythm, the user said to keep it, set up recently)
+  says why in `why`.
+- **Clean-up bots:** exactly one finding with `"cleanup": true` (finalize checks it) says why, with usage facts as
+  `text` lines and the last request as a `ref`. A habit that stopped says it was used regularly and then stopped
+  (dates and rhythm), not that it was barely used. Fold any other finding of that bot into it: the only option is
+  "Show me how to clean up X". Its repeated corrections are not proposals; you may add them as `lessons` ("if you come
+  back to it"), each `copy` the rule to save first. Its `short` is both its top-3 line and its one option (SKILL.md
+  step 9). The shared job-text item skips clean-up bots. The fleet keep / clean-up item explains how; don't repeat the
+  how in each bot. No `copy` unless the bot's job should move to another bot: then `copy` is the text for that other
+  bot, with `copy_kind` `memory` (a message asking it to remember).
 
 ## Words
 - `fix` is written from the user's side: what they can do, or what will be applied when they pick this item ("Pick this
@@ -67,7 +55,7 @@ one sentence.
 - Opening sentence: before finalize, rewrite the `ui.lede_*` key that fits the final statuses (`findings-schema.md`, UI labels) as a
   natural sentence for those counts, singular or plural; don't leave a form like "1 need work".
 - `score.basis` is internal (only in `scores.md`); it is never shown, so it can stay short and in any language.
-- Placeholder text: every English string the skeleton wrote is recorded (lines made only of bot names are not); when the report language isn't English,
+- Placeholder text: every English string the skeleton wrote is recorded; when the report language isn't English,
   finalize `--strict` lists any left unchanged (including `ui` labels).
 - Fleet section: the keep / clean-up item already says nothing is deleted automatically and how to clean up; don't
   repeat it in other items.
@@ -78,9 +66,10 @@ one sentence.
 - The opening sentence (`ui.lede_*`) is also the first sentence of your chat message; keep them the same.
 
 ## Quotes
-- `quote.orig` is word for word.
+- `quote.orig` is word for word, and its line carries the `ref` of the message it comes from (finalize looks for the
+  quote in that message). Memory-block and description quotes have `source` and no `ref`; the finding still cites a message.
 - A user quote from another bot's chat gets `"chat": "<that bot's name>"`; the report shows it as `ui.in_chat`
-  ("You (in X)"). Use `who` for other speakers. The skeleton's outage item already uses `chat` for its user quotes. A bot quote leaves out anything the app added (for example, a sent-message notice).
+  ("You (in X)"). Use `who` for other speakers. A bot quote leaves out anything the app added (for example, a sent-message notice).
 - A quote may come from another bot's chat or memory when it is evidence for this finding; finalize searches the whole
   fleet.
 - `source` (`memory` or `description`) goes on the evidence line that holds the quote, nowhere else.
@@ -91,8 +80,7 @@ one sentence.
   than the report's.
 - Quote the sentence that decided the label; for a long message, a full sentence or two, never a draft cut mid-sentence.
 
-## Leads and other items
-- `leads` may stay in the draft; finalize drops it. Use it as a checklist.
+## Other items
 - **Unanswered requests** (not part of a fleet outage) are an info item in the bot's findings, not a scored proposal.
 - **Bots not in `bots.json`** (seen only in other chats, for example a bot the user removed) are never rows or bot
   sections and change no listed bot's status. A safety event about one goes in the fleet safety info item: name it as
@@ -104,23 +92,21 @@ one sentence.
   lasting secret gets one line in the safety item suggesting a change; an expired one-time code gets nothing.
 - **Leads that aren't corrections** (several skipped questions of one kind, a stale memory fact, a promise not kept)
   can be scored findings with the default impact in `criteria.md` §4.
-- **Stalls** (`leads.stalls`): read the messages around them. Several short nudges with no answer may be a stuck bot,
-  an error, or the user typing ahead. A finding only on 2+ days (for example, a rule to say what it is doing when work
-  takes long); one stall is at most an info line. If the user asked why a bot is slow, answer it with what you saw.
-- **Chat language** (`leads.chat_language`): low priority. A finding (impact 1, a rule to answer in the user's
-  language) only if the user minded it, in the chats or in their request to you; otherwise nothing.
-- **Follow-ups** (`kind` `follow_up`): the user adds the same follow-up after the bot's answers on many days. The fix
-  is a standing rule in that bot (`copy_kind` `memory`), never a routine. Delete it if the messages are different
-  requests that only look alike.
+- **Several messages with no reply** (`unanswered_runs`): read them. A stuck bot, an error, or the user typing ahead.
+  A finding only on 2+ days (for example, a rule to say what it is doing when work takes long).
+- **Chat language** (`scripts`): low priority. A finding (impact 1, a rule to answer in the user's language) only if
+  the user minded it, in the chats or in their request to you; otherwise nothing.
+- **Repeated requests** (from the digest): a routine (`copy_kind` `routine`) for the same request by hand on 3+ days;
+  a standing rule (`kind` `follow_up`, `copy_kind` `memory`) for the same follow-up after the bot's answers. Never for
+  thanks, approvals or keep statements.
 - **Stale memory:** a finding only if later chats contradict the fact, or the fact has clearly expired (for example, a
-  past date). "Currently" alone isn't enough.
-- **Skipped questions:** one or two mean nothing. Several of the same kind from one bot (it keeps asking which next
-  step, or for permission it didn't need) can justify a rule like "go ahead with the recommended option and say what
-  you did".
+  past date). "Currently" alone isn't enough. Cite the later message by `ref` and quote the fact with `source` `memory`.
+- **Skipped questions:** one or two mean nothing. Several of the same kind from one bot can justify a rule like "go
+  ahead with the recommended option and say what you did".
 - **Setup items** (`kind` group, redundant_groups, handoff_format, connector, safety_rules, routine_cost) and a
   correction finding's optional `review` routine: `setup.md`.
 - **Shared causes:** one fleet item; each bot points to it with `"see": "fleet-N"`. When each bot needs its own text,
-  `copy` is a list of `{"bot", "text"}`.
+  `copy` is a list of `{"bot", "text"}`. Bots with no saved job description: one fleet item (`kind` `job_text`).
 - **No proposals at all:** the report hides the top-3 section. In the chat, say in one line that there is nothing to
   do, skip the multi-select, and only offer the weekly re-check.
 

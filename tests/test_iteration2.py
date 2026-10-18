@@ -3,15 +3,14 @@
 Run: python3 tests/test_iteration2.py [--keep]
 
  1. replay skips only the "self" recorded in replay.json (or --self); otherwise every bot is audited
- 2. judge_inputs prints, per bot, the share of user messages the English cues can read and a recommended mode; --auto
+ 2. judge_inputs exports every reply of every bot (no word filter, no mode)
  3. --list does not repeat a bot message already shown as the previous item's reply
  4. --label: 7 columns, \\N / - for empty, echo with user text, user_start mismatch is an error, unlisted -> 'none'
- 5. fix candidates carry incidents_after / active_days_after; a judged promise ("promised") becomes a candidate
- 6. incidents in one working session across midnight are one occasion: not repeated, flagged one_session
+ 5. fixes after a topic's first incident carry incidents_after / active_days_after; a judged promise is one
+ 6. incidents in one working session across midnight are one occasion
  7. a request that is the last message in the data is not counted as unanswered
  8. --strict warns about leftover English placeholder text when lang is not English (marker, not detection)
  9. an evidence line with both quote and text is an error
-10. skeleton quotes are whole sentences (the one holding the evidence); dates are all MM/DD
 """
 import json, os, re, shutil, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
@@ -83,16 +82,9 @@ def main():
         run(f'{S}/sessions.py', 'replay', '--work', W0, '--from', R)
         check(len(json.load(open(f'{W0}/bots.json'))) == 4, '1. without a recorded self, every listed bot is audited')
         run(f'{S}/sessions.py', 'parse', '--work', W)
-        # 2. script share + recommended mode
+        # 2. every reply, no mode
         r = run(f'{S}/judge_inputs.py', '--work', W)
-        line = next(l for l in r.stdout.splitlines() if l.startswith(NAMES[K]))
-        check('mode used: cues (cue filter' in line and 'recommended: all' in line and '25% of its user messages (1/4)' in line,
-              '2. per-bot line shows the Latin-letter share of user messages and recommends "all"')
-        r = run(f'{S}/judge_inputs.py', '--work', W, '--auto')
-        line = next(l for l in r.stdout.splitlines() if l.startswith(NAMES[K]))
-        lf = next(l for l in r.stdout.splitlines() if l.startswith(NAMES[F]))
-        check(line.startswith(f'{NAMES[K]}: 3 items, mode used: all (auto:') and 'mode used: cues (auto:' in lf and 'recommended' not in line, '2. --auto exports every reply for that bot only')
-        run(f'{S}/judge_inputs.py', '--work', W, '--all')
+        check(f'{NAMES[K]}: 3 items' in r.stdout and 'mode' not in r.stdout and 'Latin' not in r.stdout, '2. every reply of every bot is exported (no word filter, no mode)')
         ji = json.load(open(f'{W}/judge_inputs.json'))
         # 3. compact list
         r = run(f'{S}/judge_inputs.py', '--work', W, '--list')
@@ -126,48 +118,35 @@ def main():
         # 5-7. diagnostics
         run(f'{S}/diagnostics.py', '--work', W)
         d = json.load(open(f'{W}/diag.json'))
-        ge = d['bots'][E]['groups']['scope_selection']
-        check(ge['incidents'] == 3 and ge['sessions'] == 1 and ge['one_session'] and not ge['repeated'] and not ge['strong'],
-              '6. three incidents in one session across midnight: one occasion, not repeated')
-        gf = d['bots'][F]['groups']['format_length']
-        fxt = {f['id']: f for f in d['bots'][F]['fix_candidates']}
-        fc = {('promise' if fxt[c['id']]['kind'] in ('bot_said', 'bot_promised') else 'memory_write'): c for c in gf['fix_candidates']}
-        check(not any('all staff' in f['text'] or 'v2' in f['text'] for f in fxt.values()) and len(fxt) == 2,
-              '5. "from now on" inside drafted content or code is not a fix candidate; one promise listed once')
-        check(gf['sessions'] == 3 and gf['repeated'] and fc.get('promise', {}).get('incidents_after') == 2
-              and fc.get('memory_write', {}).get('incidents_after') == 1 and fc['memory_write']['active_days_after'] == 4 and 'fix_candidates' not in json.dumps(gf.get('x', {})),
-              '5. fix candidates (incl. a judged promise) carry incidents_after and active_days_after')
-        check(not d['bots'][F].get('waits') and d['bots'][F]['status_suggested'] != 'red', '7. the last message in the data is not an unanswered request')
-        # 8-10. skeleton and finalize
+        ge = d['bots'][E]['correction_topics']['scope_selection']
+        check(ge['incidents'] == 3 and ge['occasions'] == 1, '6. three incidents in one session across midnight: one occasion')
+        gf = d['bots'][F]['correction_topics']['format_length']
+        fxt = {f['id']: f for f in d['bots'][F]['fixes']}
+        fc = {fxt[c['id']]['kind']: c for c in gf['fixes_after']}
+        check(len(fxt) == 2 and not any('all staff' in f['text'] or 'v2' in f['text'] for f in fxt.values()),
+              '5. fixes are memory saves and judged promises only ("from now on" in drafted text or code is not one)')
+        check(gf['occasions'] == 3 and fc.get('bot_promised', {}).get('incidents_after') == 2
+              and fc.get('memory_write', {}).get('incidents_after') == 1 and fc['memory_write']['active_days_after'] == 4,
+              '5. fixes (incl. a judged promise) carry incidents_after and active_days_after')
+        lastref = f"{d['bots'][F]['ref_prefix']}:" 
+        check(not d['bots'][F].get('waits') and len(d['bots'][F]['unanswered_at_end']) == 1 and d['bots'][F]['unanswered_at_end'][0].startswith(lastref),
+              '7. the last message in the data is not a wait; it is listed as unanswered at the end')
+        # 8-9. skeleton and finalize
         run(f'{S}/build_findings.py', 'skeleton', '--work', W, '--lang', 'ko')
-        dr = json.load(open(f'{W}/findings_draft.json'))
-        dates = [e.get('date', '') for b in dr['bots'] for f in b['findings'] for e in f.get('now', [])] + \
-                [e.get('date', '') for f in dr['fleet'] for e in f.get('now', [])]
-        texts = json.dumps([f.get('now') for b in dr['bots'] for f in b['findings']])
-        check(dates and all(re.fullmatch(r'(\d\d/\d\d(~\d\d/\d\d)?)?', x) for x in dates) and not re.search(r'\b\d\d-\d\d\b', texts),
-              '10. every skeleton date is MM/DD')
-        ff = next(f for b in dr['bots'] if b['id'] == F for f in b['findings'] if f.get('topic') == 'format_length')
-        q0 = ff['now'][0]['quote']['orig']
-        check(q0 == 'Too long, the intro is useless', '10. short messages are quoted whole')
-        import build_findings as bf
-        long_msg = LONG + 'Too long, the intro is useless and the steps repeat. ' + LONG
-        check(bf.pick_quote(long_msg, 'intro is useless') == 'Too long, the intro is useless and the steps repeat.'
-              and bf.pick_quote(LONG).endswith('.') and len(bf.pick_quote(LONG)) <= 200,
-              '10. a long message is quoted by the sentence holding the evidence, or cut at a sentence end')
-        dr['date_label'] = '2030-03-09'
-        for b in dr['bots']:
-            b.pop('needs_review', None)
-            for f in b['findings']: f.pop('needs_review', None); f.pop('fix_check', None)
-        for f in dr['fleet']: f.pop('needs_review', None)
+        import helpers
+        dr = helpers.fill(W, lang='ko')
+        dr['fleet'][0]['title'] = 'Keep / clean-up'   # left as the skeleton wrote it
+        ref = helpers.ref_of(W, F, 'Too long, the intro is useless')
+        next(b for b in dr['bots'] if b['id'] == F)['findings'] = [helpers.finding('Summary length (test)', ref, 'Too long, the intro is useless')]
         json.dump(dr, open(f'{W}/findings_draft.json', 'w'))
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
         check(r.returncode != 0 and "skeleton's placeholder text" in r.stdout and 'fallback language' in r.stdout,
               '8. --strict flags leftover English placeholders and ui labels in a non-English report')
         dr['lang'] = 'en'; json.dump(dr, open(f'{W}/en.json', 'w'))
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--draft', f'{W}/en.json', '--strict', ok=False)
-        check("skeleton's placeholder text" not in r.stdout, '8. no placeholder warning when the report is in English')
-        x = json.loads(json.dumps(dr)); ff2 = next(f for b in x['bots'] if b['id'] == F for f in b['findings'] if f.get('topic') == 'format_length')
-        ff2['now'][0]['text'] = 'extra'; json.dump(x, open(f'{W}/bad.json', 'w'))
+        check("skeleton's placeholder text" not in r.stdout and r.returncode == 0, '8. no placeholder warning when the report is in English')
+        x = json.loads(json.dumps(dr)); next(b for b in x['bots'] if b['id'] == F)['findings'][0]['now'][0]['text'] = 'extra'
+        json.dump(x, open(f'{W}/bad.json', 'w'))
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--draft', f'{W}/bad.json', ok=False)
         check(r.returncode != 0 and 'both "quote" and "text"' in r.stdout, '9. an evidence line with quote and text is an error')
         fz = json.load(open(f'{W}/findings.json')) if os.path.exists(f'{W}/findings.json') else {}

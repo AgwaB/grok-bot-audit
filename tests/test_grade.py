@@ -23,15 +23,14 @@ try:
     run(os.path.join(HERE, 'make_replay.py'), root)
     W = os.path.join(root, 'work')
     run(f'{S}/sessions.py', 'replay', '--work', W, env={**os.environ, 'AUDIT_REPLAY_DIR': os.path.join(root, 'replay-tiny')})
-    run(f'{S}/sessions.py', 'parse', '--work', W); run(f'{S}/judge_inputs.py', '--work', W, '--all')
+    run(f'{S}/sessions.py', 'parse', '--work', W); run(f'{S}/judge_inputs.py', '--work', W)
     json.dump({x['key']: dict(label=False, type='new_request', topic=None, confidence='high', evidence='thanks')
                for x in json.load(open(f'{W}/judge_inputs.json'))}, open(f'{W}/labels.json', 'w'))
     run(f'{S}/diagnostics.py', '--work', W); run(f'{S}/build_findings.py', 'skeleton', '--work', W)
-    d = json.load(open(f'{W}/findings_draft.json'))
-    d['date_label'] = 'March 4, 2030'
-    for b in d['bots']: b['issue'] = 'Working well'; b.pop('needs_review', None)
-    for f in d['fleet']: f.pop('needs_review', None)
-    json.dump(d, open(f'{W}/findings_draft.json', 'w'))
+    sys.path.insert(0, HERE); import helpers
+    d = helpers.fill(W)   # the host bot's part: every bot Fine, plain text
+    for b in d['bots']: b['issue'] = 'Working well'
+    d['date_label'] = 'March 4, 2030'; json.dump(d, open(f'{W}/findings_draft.json', 'w'))
     run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict')
     run(f'{S}/make_report.py', f'{W}/findings.json', '--outdir', f'{W}/report')
     lede = open(f'{W}/report/lede.txt', encoding='utf-8').read().strip()

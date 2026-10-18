@@ -2,15 +2,14 @@
 """Regression tests for iteration 6 (synthetic replays: fake bots, fake text). Run: python3 tests/test_iteration6.py [--keep]
 
 A. references carry no fixture answers: no test-fixture message or label text appears in any reference or SKILL.md
-B. clean-up is routine-aware: a bot the user typed to once but whose routine still runs is kept; a stopped one is not
-C. too new to judge: a bot added late to an older fleet gets no clean-up verdict; in a fleet that is itself new, a
-   one-time bot that went quiet is still a clean-up candidate
-D. rhythm: a bot used monthly is not idle after a month; the 3+ incident rule has a rate floor for very busy bots
-E. judge mode: accented Latin chats and chats that mix another script with code get every reply; plain English keeps
-   the cue filter; the confirm-conflict hint, past-date memory facts and silent check-ins work without words
+B. use counts routine runs: a bot typed to once whose routine still runs is not idle; a stopped routine is
+C. age facts: a bot added late to an older fleet shows its own age next to the fleet's
+D. rhythm facts: a bot used monthly has a typical gap of about a month; corrections come with a rate per 100 requests
+E. every reply of every bot is a judge item, in any language and mixed with code; skipped cards and past-date memory
+   facts are counted without words
 F. the work folder is new and private per run (two runs never share it)
-G. setup checks: pasted hand-offs -> group chat item (with lead), same-member groups, browser on a plugin site,
-   safety rule only in memory, a routine that runs every few minutes; rendered in their own report section
+G. setup facts: pasted answers between bots, same-member groups, browser on a plugin site, memory facts, routine run
+   spacing; setup items the host writes from them finalize and render in their own report section
 H. weekly re-check: summary.json and --previous (UNCHANGED / CHANGED); routine rules documented; text for another
    bot goes as a message to remember, not into a description field
 """
@@ -19,7 +18,6 @@ HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 SK = os.path.join(ROOT, 'skills', 'audit-my-bots'); S = os.path.join(SK, 'scripts')
 sys.path.insert(0, S); sys.path.insert(0, HERE)
 import make_fixture as mf
-import judge_inputs as ji
 failures = []
 
 def check(cond, msg):
@@ -47,7 +45,7 @@ def convo(script):
 def anchor(days=58):
     return [x for d in range(days) for x in ((d, 12, 0, 'u', f'Everyday question number {d} about item {d * 7}'), (d, 12, 1, 'b', f'Answer {d}. [fake]'))]
 
-def fleet(root, name, bots, now, labels=None, mode='--auto'):
+def fleet(root, name, bots, now, labels=None):
     """bots: {name: script}. Returns (W, diag, draft)."""
     R = os.path.join(root, name); W = os.path.join(root, 'w-' + name); tmp = R + '/_p'; os.makedirs(R)
     listing = []
@@ -59,7 +57,7 @@ def fleet(root, name, bots, now, labels=None, mode='--auto'):
         run(f'{S}/sessions.py', 'save-page', '--work', R, f'{os.path.basename(os.path.dirname(raw))}={raw}')
     shutil.rmtree(tmp)
     run(f'{S}/sessions.py', 'replay', '--work', W, '--from', R); run(f'{S}/sessions.py', 'parse', '--work', W)
-    out = run(f'{S}/judge_inputs.py', '--work', W, mode).stdout
+    out = run(f'{S}/judge_inputs.py', '--work', W).stdout
     items = json.load(open(W + '/judge_inputs.json'))
     lines = [f"{it['n']}\tcorrection\t{topic}\thigh\t-\t-\t{it['user'][:6]}\n" for it in items for t, topic in (labels or {}).items()
              if it['user'] == t]
@@ -98,17 +96,13 @@ def test_cleanup(root):
     new = [(50, 18, 0, 'u', 'Weekly review please'), (50, 18, 1, 'b', 'Three wins. [fake]')]
     W, B, diag, draft, _ = fleet(root, 'cleanup', {'Brief Bot': mb, 'Stopped Bot': old, 'Monthly Bot': monthly, 'New Bot': new,
                                                    'Anchor': anchor()}, NOW)
-    check(B['Brief Bot']['status_suggested'] == 'green' and B['Brief Bot']['routine_active'], 'B. typed once, routine still running -> kept, routine_active')
-    check(B['Stopped Bot']['status_suggested'] == 'red', 'B. a routine that stopped long ago does not keep a bot')
-    check(B['Monthly Bot']['status_suggested'] == 'green' and B['Monthly Bot']['within_rhythm'], 'D. a monthly bot is within its rhythm after a month')
-    check(B['New Bot']['status_suggested'] == 'green' and B['New Bot']['too_new'], 'C. a bot added late to an older fleet is too new to judge')
-    why = {b['name']: b['why'] for b in draft['bots']}
-    check('routine' in why['Brief Bot'] and 'Too new' in why['New Bot'] and 'how often' in why['Monthly Bot'], 'B/C/D. the skeleton says why such a bot is kept')
-    # a fleet that is itself new: the one-time bot still gets the idle rule
-    W2, B2, *_ = fleet(root, 'young', {'Once': [(0, 12, 0, 'u', 'Save a fake note'), (0, 12, 1, 'b', 'Saved. [fake]')],
-                                       'Busy': anchor(10) + [(d, 15, 0, 'u', f'Another fake task {d}-{j}') for d in range(10) for j in range(3)]},
-                         '2030-03-11 09:00')
-    check(B2['Once']['status_suggested'] == 'red' and not B2['Once']['too_new'], 'C. in a new fleet a one-time quiet bot is still a clean-up candidate')
+    check(B['Brief Bot']['idle_days'] < 1 and B['Brief Bot']['idle_typed_days'] > 50 and B['Brief Bot']['routines']['runs'] == 57,
+          'B. typed once, routine still running: idle counts the routine (idle_days vs idle_typed_days)')
+    check(B['Stopped Bot']['idle_days'] > 40 and B['Stopped Bot']['routines']['last'][:10] == '2030-03-11', 'B. a routine that stopped long ago leaves the bot idle')
+    check(B['Monthly Bot']['typical_gap_days'] == 28 and B['Monthly Bot']['active_days'] == 2, 'D. a monthly bot has a typical gap of 28 days')
+    check(B['New Bot']['age_days'] < 10 and diag['fleet_age_days'] > 50, 'C. a bot added late shows its own age next to the fleet age')
+    check(not any(k in json.dumps(draft) for k in ('status_suggested', 'too_new', 'faded')) and all(b['status'] == 'TODO' for b in draft['bots']),
+          'B/C/D. the skeleton leaves every status to the host bot')
 
 def test_rate_floor(root):
     many = [x for d in range(10, 50) for j in range(10) for x in ((d, 8, j * 2, 'u', f'Sort batch {d}-{j}'), (d, 8, j * 2 + 1, 'b', 'Sorted. [fake]'))]
@@ -118,36 +112,26 @@ def test_rate_floor(root):
     cor2 = {f'Too formal again, take {i}': 'tone_style' for i in range(3)}
     few += [x for i, d in enumerate((12, 22, 32)) for x in ((d, 8, 2, 'u', f'Too formal again, take {i}'), (d, 8, 3, 'b', 'Casual. [fake]'))]
     W, B, *_ = fleet(root, 'rate', {'Sorter': many, 'Poster': few, 'Anchor': anchor()}, NOW, labels={**cor, **cor2})
-    g, g2 = B['Sorter']['groups']['format_length'], B['Poster']['groups']['tone_style']
-    check(g['incidents'] == 3 and not g['strong'] and B['Sorter']['status_suggested'] == 'green', 'D. 3 incidents in 400 requests are under the rate floor')
-    check(g2['incidents'] == 3 and g2['strong'] and B['Poster']['status_suggested'] == 'yellow', 'D. 3 incidents in 33 requests are still strong')
+    g, g2 = B['Sorter']['correction_topics']['format_length'], B['Poster']['correction_topics']['tone_style']
+    check(g['incidents'] == 3 and g['occasions'] == 3 and g['per_100_requests'] < 1, f"D. 3 incidents in 403 requests: {g['per_100_requests']} per 100")
+    check(g2['incidents'] == 3 and g2['per_100_requests'] > 5, f"D. 3 incidents in 33 requests: {g2['per_100_requests']} per 100")
 
-def test_judge_mode(root):
-    hit, n, acc = ji.latin_share(['Escribe un resumen del art\u00edculo', 'Demasiado largo, sin introducci\u00f3n'])
-    check(hit == 2 and acc == 2, 'E. accented Latin counts as Latin and is counted as accented')
+def test_judge_all(root):
     ko = '\uc5d0 retry logic add \ud574\uc918, \ub85c check'   # fake Korean words between code
-    hit, n, _ = ji.latin_share([f'`fetch_user_1()` {ko} `pytest -k test_retry`'])
-    check(n == 1 and hit == 0, 'E. a message mixing another script with code is not "mostly Latin"')
     es = [x for d in range(0, 20, 2) for x in ((d, 9, 0, 'u', 'Escribe un resumen del art\u00edculo de hoy'), (d, 9, 1, 'b', 'Resumen. [fake]'))]
     es += [(4, 9, 3, 'u', 'Demasiado largo, por favor'), (4, 9, 4, 'b', 'Vale. [fake]')]
     kc = [x for d in range(0, 20) for x in ((d, 9, 0, 'u', f'`load_{d}()` {ko}'), (d, 9, 1, 'b', 'Done. [fake]'))]
-    kc += [(5, 9, 3, 'u', '\ub2e4\uc2dc \ud574\uc918 \ubd80\ud0c1'), (5, 9, 4, 'b', 'Ok. [fake]')]
     en = [x for d in range(0, 20) for x in ((d, 9, 0, 'u', f'Summarise note {d}'), (d, 9, 1, 'b', 'Summary. [fake]'))]
-    en += [(5, 9, 3, 'u', 'No, too long'), (5, 9, 4, 'b', 'Ok. [fake]')]
     vague = [x for d in range(0, 30, 2) for x in ((d, 16, 0, 'u', 'do the thing'), (d, 16, 1, 'b', 'Which one? [fake]'), (d, 16, 2, 'skip', 'Which file?'))]
-    vague += [x for d, t in ((4, 'No, I meant the other sheet'), (14, 'Not that one, I meant the letter')) for x in ((d, 16, 5, 'u', t), (d, 16, 6, 'b', 'Sorry. [fake]'))]
     nudge = [(1, 9, 0, 'u', 'Find the receipt'), (1, 9, 1, 'b', 'Looking now. [fake]'), (1, 11, 0, 'u', '\u3069\u3046?'), (1, 11, 1, 'b', 'Found it. [fake]'),
              (0, 9, 0, 'mem', [('2030-03-01', 'Flight booked for 2030-03-20.')])]
-    W, B, diag, draft, out = fleet(root, 'mode', {'Spanish': es, 'KoCode': kc, 'English': en, 'Vague': vague, 'Nudge': nudge, 'Anchor': anchor()}, NOW,
-                                   labels={'No, I meant the other sheet': 'misread_intent', 'Not that one, I meant the letter': 'misread_intent'})
-    line = lambda nm: next(l for l in out.splitlines() if l.startswith(nm + ':'))
-    check('mode used: all' in line('Spanish'), 'E. --auto exports every reply for a Latin-script chat in another language')
-    check('mode used: all' in line('KoCode'), 'E. --auto exports every reply for a user mixing another script with code')
-    check('mode used: cues' in line('English'), 'E. plain English chats keep the cue filter')
-    check(B['Vague']['groups']['misread_intent']['confirm_conflict'], 'E. a bot whose question cards are often skipped gets confirm_conflict')
-    check(any(p.get('by') == 'silence' for p in B['Nudge']['promise_candidates']), 'E. a short "...?" after an hour of silence is a promise lead in any language')
-    facts = B['Nudge']['memory']['time_sensitive']
-    check(any(f.get('past_dates') == ['2030-03-20'] for f in facts), 'E. a memory fact with a past date is a stale-memory lead in any language')
+    W, B, diag, draft, out = fleet(root, 'mode', {'Spanish': es, 'KoCode': kc, 'English': en, 'Vague': vague, 'Nudge': nudge, 'Anchor': anchor()}, NOW)
+    items = json.load(open(W + '/judge_inputs.json')); per = {}
+    for it in items: per[it['bot_name']] = per.get(it['bot_name'], 0) + 1
+    check(per['Spanish'] == 10 and per['KoCode'] == 19 and per['English'] == 19, f'E. every reply after a bot message is an item in any language ({per})')
+    check(B['Vague']['skipped_questions']['count'] == 15, 'E. skipped question cards are counted')
+    check(any(f.get('past_dates') == ['2030-03-20'] for f in B['Nudge']['memory']['facts']), 'E. a memory fact with a past date is marked, in any language')
+    check(B['Vague']['repeated_texts'] and len(B['Vague']['repeated_texts'][0]['days']) == 15, 'E. the same text on many days is an exact repeat with its days')
 
 def test_unique_w(root):
     skill = open(os.path.join(SK, 'SKILL.md'), encoding='utf-8').read()
@@ -182,36 +166,27 @@ def test_setup(root):
         watch += [(d, h, m, 'routine', 'price'), (d, h, m, 'b', 'No change. [fake]')]
     W, B, diag, draft, _ = fleet(root, 'setup', {'Researcher': rs, 'Writer': wr, 'Alpha One': ga, 'Alpha Two': gb, 'Mailer': mail,
                                                  'Plugged': plug, 'Watcher': watch, 'Anchor': anchor()}, NOW)
-    gc = diag['fleet']['group_candidates']
-    check(len(gc) == 1 and sorted(gc[0]['bots_names']) == ['Researcher', 'Writer'] and gc[0]['lead_name'] == 'Researcher',
-          'G. pasted hand-offs on 2+ days suggest one group, led by the bot whose answers start the chain')
-    check([sorted(r['groups']) for r in diag['fleet']['redundant_groups']] == [['Alpha', 'Beta']], 'G. two group chats with the same members are flagged')
-    check([c['service'] for c in B['Mailer']['connector_candidates']] == ['Gmail'] and not B['Plugged']['connector_candidates'],
-          'G. browser on a plugin site suggests the plugin, unless the bot already uses it')
-    check(B['Mailer']['memory_safety_rules'] and not B['Anchor']['memory_safety_rules'], 'G. a safety rule kept only in memory is found')
-    check(B['Watcher']['routine_cost'] and B['Watcher']['routine_cost']['median_gap_min'] == 10 and B['Watcher']['status_suggested'] == 'green',
-          'G. a routine every 10 minutes is a cost item; the bot itself stays Fine')
-    kinds = sorted(f.get('kind') for f in draft['fleet'] if f.get('kind') and f.get('kind') != 'job_text')
-    check(kinds == ['connector', 'group', 'redundant_groups', 'routine_cost', 'safety_rules'], f'G. the skeleton drafts one setup item per kind ({kinds})')
-    keep_i = next(i for i, f in enumerate(draft['fleet']) if f.get('keep'))
-    check(all(i > keep_i for i, f in enumerate(draft['fleet']) if f.get('kind') in ('group', 'connector', 'safety_rules', 'routine_cost')),
-          'G. setup items come after the keep item')
-    # finalize and render: setup items in their own section
-    for b in draft['bots']:
-        b.pop('needs_review', None); b['issue'] = 'Fine'
-        for f in b['findings']: f.pop('needs_review', None); f.pop('fix_check', None)
-    for f in draft['fleet']:
-        f.pop('needs_review', None); f.pop('confirm', None)
-        if f.get('kind') == 'group':
-            f['group']['project'] = 'Fake project'
-            for m in f['group']['members']: m['part'] = 'Fake part'
-        for k in ('fix', 'short', 'title'):
-            if 'TODO' in str(f.get(k, '')): f[k] = 'Test text (fake).'
-        if isinstance(f.get('copy'), str) and 'TODO' in f['copy']: f['copy'] = 'Test copy (fake).'
-        if isinstance(f.get('copy'), list):
-            for x in f['copy']: x['text'] = 'Test copy (fake).'
-    draft['date_label'] = 'April 27, 2030'
-    json.dump(draft, open(W + '/findings_draft.json', 'w'))
+    pa = diag['fleet']['pasted_answers']
+    check(len(pa) == 1 and (pa[0]['src'], pa[0]['to']) == ('Researcher', 'Writer') and len(pa[0]['days']) == 3 and not pa[0]['shared_groups'],
+          'G. answers pasted from one bot into another are listed with their days and refs')
+    check([sorted(r['groups']) for r in diag['fleet']['same_member_groups']] == [['Alpha', 'Beta']], 'G. two group chats with the same members are listed')
+    check([(c['service'], c['plugin_used']) for c in B['Mailer']['browser_sites']] == [('Gmail', False)] and B['Plugged']['browser_sites'][0]['plugin_used'],
+          'G. browser use on a plugin site is listed, with whether the plugin is used')
+    check(B['Watcher']['routines']['median_gap_min'] == 10 and B['Watcher']['routines']['no_reply_or_same'] > 0.9, 'G. routine spacing and repeated replies are facts')
+    import helpers
+    rf = lambda bot: helpers.any_ref(W, bot)
+    sc = dict(impact=1, confidence='medium', effort=1, reversibility=1.0, basis='test')
+    items = [dict(kind='group', title='Pass work in a group (test)', now=[dict(date='', ref=pa[0]['examples'][0]['ref'], text='Pasted on 3 days (test)')],
+                  group=dict(project='Fake project', lead='Researcher', order=['Researcher', 'Writer'], blocked='ask_user',
+                             members=[dict(bot='Researcher', part='Fake part'), dict(bot='Writer', part='Fake part')]),
+                  fix='Test text (fake).', copy='Test copy (fake).', copy_kind='group', short='Test (fake)', score=dict(sc, effort=2)),
+             dict(kind='redundant_groups', title='Two groups (test)', now=[dict(date='', ref=rf('Alpha One'), text='Alpha / Beta (test)')], fix='Test text (fake).', short='Test (fake)', score=sc),
+             dict(kind='connector', bot='Mailer', title='Gmail in the browser (test)', now=[dict(date='', ref=rf('Mailer'), text='Browser on Gmail (test)')], fix='Test text (fake).', short='Test (fake)', score=sc),
+             dict(kind='safety_rules', bot='Mailer', title='Safety rule only in memory (test)', fix='Test text (fake).', copy='Test copy (fake).', copy_kind='other', short='Test (fake)', score=sc,
+                  now=[dict(date='03/01', source='memory', quote={'orig': 'Never send emails without asking me first.'}), dict(date='', ref=rf('Mailer'), text='Asked to check mail (test)')]),
+             dict(kind='routine_cost', bot='Watcher', title='Routine every 10 minutes (test)', now=[dict(date='', ref=B['Watcher']['routines']['refs'][0], text='Every 10 minutes (test)')],
+                  fix='Test text (fake).', copy='Test copy (fake).', copy_kind='routine', short='Test (fake)', score=sc)]
+    helpers.fill(W, fleet=items)
     r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict', ok=False)
     check(r.returncode == 0, 'G. a draft with setup items finalizes (memory quote of the safety rule checks out)' + ('' if r.returncode == 0 else ': ' + r.stdout[-300:]))
     r = run(f'{S}/make_report.py', W + '/findings.json', '--outdir', W + '/report', '--no-pdf')
@@ -243,7 +218,7 @@ def test_weekly(W):
 def main():
     keep = '--keep' in sys.argv; root = tempfile.mkdtemp(prefix='it6-')
     try:
-        test_no_fixture_text(); test_cleanup(root); test_rate_floor(root); test_judge_mode(root); test_unique_w(root)
+        test_no_fixture_text(); test_cleanup(root); test_rate_floor(root); test_judge_all(root); test_unique_w(root)
         W = test_setup(root); test_weekly(W)
     finally:
         if keep: print('kept', root)

@@ -36,59 +36,58 @@ def main():
         check('WARNING' not in r.stdout, 'all fixture transcripts are complete')
         tl = json.load(open(f'{W}/timelines/{RECIPE}.json'))
         check(sum(e['role'] == 'user' for e in tl['events']) == 9 and tl['events'][0]['ts'] == '2030-03-01 09:00', 'timeline parses user messages and timestamps')
-        run(f'{S}/judge_inputs.py', '--work', W, '--all')   # no cue filter: every reply after a bot message
-        check(JA_QUOTE in {x['user'] for x in json.load(open(f'{W}/judge_inputs.json'))}, '--all exports replies in any language')
-        shutil.copy(f'{FX}/cues_ja.json', f'{W}/cues.json')   # cue phrases supplied by the host bot
-        run(f'{S}/judge_inputs.py', '--work', W)
+        run(f'{S}/judge_inputs.py', '--work', W)   # no word filter: every reply after a bot message
         ji = json.load(open(f'{W}/judge_inputs.json'))
         gold = json.load(open(f'{FX}/labels_by_text.json'))
         found = {x['user'] for x in ji}
-        check(all(t in found for t in gold), f'candidate filter catches every planted correction ({len(gold)}/{len(gold)}; {len(ji)} candidates)')
+        check(JA_QUOTE in found and all(t in found for t in gold), f'every reply is a judge item, in any language ({len(gold)} planted corrections, {len(ji)} items)')
         labels = {x['key']: gold.get(x['user'], dict(label=False, type='new_request', topic=None, confidence='medium', evidence='test'))
                   for x in ji}
         json.dump(labels, open(f'{W}/labels.json', 'w'), ensure_ascii=False)
         run(f'{S}/diagnostics.py', '--work', W, '--now', '2030-03-11 09:00')
-        d = json.load(open(f'{W}/diag.json'))
-        st = {b: d['bots'][b]['status_suggested'] for b in d['bots']}
-        check(st[OLD] == 'red', 'idle bot -> Clean up')
-        g = d['bots'][RECIPE]['groups']['format_length']; fxt = {f['id']: f for f in d['bots'][RECIPE]['fix_candidates']}
-        check(st[RECIPE] == 'yellow' and any('From now on' in fxt[c['id']]['text'] and c['incidents_after'] >= 1 for c in g['fix_candidates']),
-              'recipe bot: repeated format fix -> Needs work; the "from now on" in between is a fix candidate')
-        check(st[TRIP] == 'yellow' and d['bots'][TRIP]['groups']['misread_intent']['incidents'] == 3, 'trip bot: misreads on 3 days -> Needs work')
-        check(st[MEMO] == 'green', 'one-off correction does not change status')
-        check(d['fleet']['outages'] and set(d['fleet']['outages'][0]['bots']) == {TRIP, MEMO}, 'overlapping silences in two bots are a fleet outage')
-        check(any(len(r['days']) >= 4 for r in d['bots'][RECIPE]['repeated_requests']), 'same request on 4 days -> routine candidate')
-        check(d['bots'][RECIPE]['memory']['time_sensitive'], 'time-sensitive memory fact is flagged')
-        check(d['bots'][TRIP]['skipped_questions']['count'] == 1, 'skipped question card counted')
+        d = json.load(open(f'{W}/diag.json')); B = d['bots']
+        check(not any('status_suggested' in b or 'faded' in b for b in B.values()), 'diagnostics gives facts, no suggested status')
+        check(B[OLD]['idle_days'] >= 7 and B[OLD]['share'] < 0.1, f"idle bot: idle and share are facts ({B[OLD]['idle_days']} days, {B[OLD]['share']})")
+        g = B[RECIPE]['correction_topics']['format_length']
+        check(g['incidents'] == 3 and g['occasions'] == 3 and len(g['refs']) == 3, 'recipe bot: 3 labelled format corrections on 3 occasions, with refs')
+        check(B[TRIP]['correction_topics']['misread_intent']['incidents'] == 3, 'trip bot: 3 labelled misreads counted')
+        check(d['fleet']['overlapping_waits'] and set(d['fleet']['overlapping_waits'][0]['bots']) == {TRIP, MEMO}, 'overlapping silences in two bots are listed')
+        check(B[RECIPE]['memory']['facts'] and all('learned' in f for f in B[RECIPE]['memory']['facts']), 'memory facts come with learned dates')
+        check(B[TRIP]['skipped_questions']['count'] == 1, 'skipped question card counted')
+        dg = run(f'{S}/judge_inputs.py', '--work', W, '--digest', '--kb', '100').stdout
+        n_typed = sum(b['real_requests'] for b in B.values())
+        check(sum(1 for ln in dg.splitlines() if re.match(r"^[\w-]+:\d+ ", ln)) == n_typed, f'digest lists every typed message with its id ({n_typed})')
         run(f'{S}/build_findings.py', 'skeleton', '--work', W)
         dr = json.load(open(f'{W}/findings_draft.json'))
         check(dr.get('lang') == 'en' and 'glance' in dr.get('ui', {}) and dr.get('date_label'), 'skeleton carries lang, fallback ui labels and date_label')
-        rf = next(f for b in dr['bots'] if b['id'] == RECIPE for f in b['findings'] if f.get('topic') == 'format_length')
-        check(rf.get('fix_check') and rf['score']['impact'] == 2, 'fix candidates are left for the bot to confirm; impact not raised')
-        check(any(f.get('cleanup') for b in dr['bots'] if b['id'] == OLD for f in b['findings']), "a clean-up bot's finding is marked cleanup (one option)")
-        dr['date_label'] = 'March 11, 2030'
-        for b in dr['bots']:   # what the host bot would do: write plain-language text, then clear review flags
-            b['issue'] = f"Test issue for {b['name']}"; b.pop('needs_review', None)
-            for f in b['findings']:
-                f.pop('needs_review', None); f.pop('fix_check', None)
-                if f.get('topic'): f['copy'] = 'Test rule text (fake).'
-                if 'TODO' in f.get('fix', ''): f['fix'] = 'Before booking, confirm lodging type, meal and time of day (fake).'
-        for f in dr['fleet']:
-            f.pop('needs_review', None)
-            if isinstance(f.get('copy'), list):
-                for x in f['copy']: x['text'] = f"Test description for {x['bot']} (fake)."
-        dr['fleet'].append(dict(title='Test translated quote', info=True, fix='Nothing to do (test).',
-                                now=[dict(date='03/07', quote=dict(orig=JA_QUOTE, translation='Too long. Make it one line', lang='ja'))]))
-        json.dump(dr, open(f'{W}/findings_draft.json', 'w'), ensure_ascii=False)
+        check(all(b['status'] == 'TODO' and not b['findings'] for b in dr['bots']), 'skeleton leaves every status and finding to the host bot')
+        r = run(f'{S}/build_findings.py', 'finalize', '--work', W, ok=False)
+        check(r.returncode != 0 and 'status must be' in r.stdout, 'finalize refuses a row without a decided status')
+        H = __import__('helpers')
+        fr = [H.finding(f'Format fix {k} (test)', H.ref_of(W, RECIPE, q), q) for k, q in enumerate(gold, 1) if gold[q]['topic'] == 'format_length' and q != JA_QUOTE]
+        fr[0]['now'].append(dict(date='03/07', ref=H.ref_of(W, MEMO, JA_QUOTE), quote=dict(orig=JA_QUOTE, translation='Too long. Make it one line', lang='ja')))
+        names = {b['id']: b['name'] for b in dr['bots']}
+        cu = dict(title='Stopped being used (test)', cleanup=True, short='Show me how to clean up (test)', fix='See the keep item (test).',
+                  now=[dict(date='', ref=H.any_ref(W, OLD), text='Last request (test)')], score=dict(impact=1, confidence='medium', effort=1, reversibility=0.6, basis='test'))
+        H.fill(W, status={names[OLD]: 'red', names[RECIPE]: 'yellow'},
+               findings={names[RECIPE]: fr + [H.finding('Extra (test)', H.ref_of(W, RECIPE, 'Too long'))], names[OLD]: [cu],
+                         names[TRIP]: [H.finding('Trip rule (test)', H.ref_of(W, TRIP, "I meant a hostel"), "I meant a hostel")]})
         r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--strict')
         fz = json.load(open(f'{W}/findings.json'))
         check(len(fz['top3']) == 3 and all(len([f for f in b['findings'] if f.get('score')]) <= 3 for b in fz['bots']), 'top 3 picked and at most 3 scored proposals per bot')
-        # negative test: an invented quote must be rejected
-        bad = json.load(open(f'{W}/findings_draft.json'))
-        bad['bots'][0]['findings'][0]['now'].append({'date': '03/02', 'quote': {'orig': 'This sentence was never said by anyone'}})
-        json.dump(bad, open(f'{W}/bad.json', 'w'))
-        r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--draft', f'{W}/bad.json', ok=False)
-        check(r.returncode != 0 and 'not found word for word' in r.stdout, 'invented quote is rejected')
+        check([b['status'] for b in fz['bots']][:2] == ['yellow', 'red'], 'rows in status order: needs work, clean-up, fine')
+        def bad(mut, want, msg):
+            x = json.load(open(f'{W}/findings_draft.json')); mut(x); json.dump(x, open(f'{W}/bad.json', 'w'), ensure_ascii=False)
+            r = run(f'{S}/build_findings.py', 'finalize', '--work', W, '--draft', f'{W}/bad.json', ok=False)
+            check(r.returncode != 0 and want in r.stdout, msg)
+        rb = lambda x: next(b for b in x['bots'] if b['id'] == RECIPE)
+        bad(lambda x: rb(x)['findings'][0]['now'].append({'date': '03/02', 'quote': {'orig': 'This sentence was never said by anyone'}}),
+            'not found word for word', 'invented quote is rejected')
+        bad(lambda x: rb(x)['findings'][0]['now'][0].update(ref=rb(x)['findings'][0]['now'][0]['ref'].split(':')[0] + ':99999'),
+            'is not a message id', 'a message id that does not exist is rejected')
+        bad(lambda x: rb(x)['findings'][0]['now'][0].update(ref=rb(x)['findings'][1]['now'][0]['ref']),
+            'not found word for word in message', 'a real quote cited with the wrong message id is rejected')
+        bad(lambda x: [e.pop('ref') for e in rb(x)['findings'][0]['now']], 'cite at least one message', 'a finding without a message id is rejected')
         run(f'{S}/make_report.py', f'{W}/findings.json', '--outdir', f'{W}/report')
         # second language: the host bot sets lang and translated ui labels (a few here; the rest fall back to English)
         fx = json.load(open(f'{W}/findings.json')); fx['lang'] = 'ja'

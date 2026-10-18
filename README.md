@@ -20,8 +20,8 @@ and the memory the app shows it. No external APIs and no logins.
   bots; for a clean-up candidate it shows you how to do it yourself, after you check that bot's routines.
 
 The scripts fix only the report's shape; the bot writes every word (text, labels, dates, translations) in your language.
-Quotes stay in the original words. For chats in other languages the bot supplies its own cue phrases or reads every reply
-(see `skills/audit-my-bots/references/cues.md`).
+Quotes stay in the original words. The scripts read, count and check; the bot does all the judging (statuses and
+findings) from those facts, in any language, and every finding cites a real message.
 
 ## What it looks at
 | area | how |
@@ -31,7 +31,7 @@ Quotes stay in the original words. For chats in other languages the bot supplies
 | Less waste | unanswered requests, outages across bots, stale or duplicated memory facts |
 | Automation | the same request made by hand on many days becomes a routine candidate |
 | Right bot for the job | the same job split across bots, requests that belong to another bot, empty or outdated descriptions |
-| Merge / clean up | idle bots with a very small share of use |
+| Merge / clean up | bots the user stopped using (judged against each bot's own rhythm), never one the user said to keep |
 
 Rules and thresholds are in `skills/audit-my-bots/references/criteria.md`; the correction rubric is in `skills/audit-my-bots/references/rubric_correction.md`.
 
@@ -55,11 +55,11 @@ the fonts of the machine that made it.
 |---|---|
 | `skills/audit-my-bots/SKILL.md` | the end-to-end procedure the bot follows, including the safety rules |
 | `skills/audit-my-bots/scripts/sessions.py` | list bots (name and description only), save transcript pages, build per-bot timelines |
-| `skills/audit-my-bots/scripts/judge_inputs.py` | wide filter for messages that might be corrections; exports items for the rubric |
-| `skills/audit-my-bots/scripts/diagnostics.py` | usage (typed requests and routine runs), correction groups, suggested status, outages, memory, repeated requests, overlap leads, setup checks (group chats per project, hand-off format, plugins, safety rules in memory, routine frequency) |
-| `skills/audit-my-bots/scripts/build_findings.py` | `skeleton`: a draft findings file with verbatim evidence; `finalize`: checks quotes word for word, scores, caps 3 per bot, picks the top 3 |
+| `skills/audit-my-bots/scripts/judge_inputs.py` | exports every reply for the rubric, records labels, and prints a digest of every typed message with its id |
+| `skills/audit-my-bots/scripts/diagnostics.py` | facts only: usage, rhythm, waits and overlapping waits, routine run statistics, labelled corrections grouped and counted, memory facts, exact repeats, pasted answers, bot-to-bot messages, group chats |
+| `skills/audit-my-bots/scripts/build_findings.py` | `skeleton`: the frame the bot fills; `finalize`: checks structure, message ids, quotes word for word and the keep / clean-up rules, scores, caps 3 per bot, picks the top 3 |
 | `skills/audit-my-bots/scripts/make_report.py` | renders the HTML and PDF (headless Chrome, temporary profile); `summary.json` and `--previous` for the weekly re-check |
-| `skills/audit-my-bots/references/` | correction rubric, criteria, findings schema, language cues, setup checks, design notes |
+| `skills/audit-my-bots/references/` | correction rubric, criteria, findings schema, writing guide, setup checks, design notes |
 | `assets/` | plugin logo |
 | `tests/` | synthetic fixture (fake bots, fake chats), offline tests, and the skill eval kit (`EVAL.md`, `grade.py`) |
 
@@ -74,8 +74,8 @@ the fonts of the machine that made it.
 python3 tests/test_pipeline.py
 ```
 This runs the whole pipeline offline on `tests/fixtures` (regenerate it with `python3 tests/make_fixture.py`) and checks that the HTML and
-PDF are produced in English and in a second language (custom labels and `lang`). It also checks statuses, the outage, the routine candidate, the 3-per-bot cap and that an
-invented quote is rejected.
+PDF are produced in English and in a second language (custom labels and `lang`). It also checks the facts (usage, waits, overlapping waits, repeats), the 3-per-bot cap and that an invented quote
+or message id is rejected.
 
 ```bash
 python3 tests/test_regressions.py   # issues found in real runs

@@ -1,6 +1,6 @@
 # Findings JSON (schema 3)
 
-`build_findings.py skeleton` writes `findings_draft.json`; you edit it, then `build_findings.py finalize` checks it and writes
+`build_findings.py skeleton` writes `findings_draft.json` (a frame: one row per bot with `TODO`, no findings); you fill it, then `build_findings.py finalize` checks it and writes
 `findings.json`, which `make_report.py` renders.
 
 The scripts fix the structure; every word the reader sees comes from this file, written by you in the user's language.
@@ -41,9 +41,9 @@ The scripts fix the structure; every word the reader sees comes from this file, 
 {
   "title": "It advises without knowing the light",
   "now": [                                   // evidence, oldest first
-    {"date": "03/01", "quote": {"orig": "That fern is in a dark hallway, I told you"}},
-    {"date": "03/02", "quote": {"orig": "Il n'y a presque pas de lumière ici", "translation": "There is almost no light here", "lang": "fr"}},
-    {"date": "03/03", "who": "bot", "quote": {"orig": "From now on I will ask about light first."}},
+    {"date": "03/01", "ref": "a1b2:14", "quote": {"orig": "That fern is in a dark hallway, I told you"}},
+    {"date": "03/02", "ref": "a1b2:31", "quote": {"orig": "Il n'y a presque pas de lumière ici", "translation": "There is almost no light here", "lang": "fr"}},
+    {"date": "03/03", "ref": "a1b2:32", "who": "bot", "quote": {"orig": "From now on I will ask about light first."}},
     {"date": "02/20", "source": "memory", "quote": {"orig": "The user has a north-facing balcony."}},
     {"date": "", "text": "Last request 03/08"}   // plain fact, not a quote
   ],
@@ -57,15 +57,11 @@ The scripts fix the structure; every word the reader sees comes from this file, 
   "short": "Garden Helper: ask about light",   // optional short line for the top 3
   "see": "fleet-1",          // optional: this bot's evidence for a shared fleet item (no Apply box, no score)
   "info": true,              // optional: information only (no Apply box, no score)
-  "needs_review": true,      // set by skeleton; remove after you rewrite the text
-  "fix_check": [{"id": "fx-3", "ts": "…", "incidents_after": 1, "active_days_after": 3}],
-             // set by skeleton: unverified fix candidates (texts in the bot's "fix_candidates"); resolve, then delete
-  "fix_check_omitted": {"count": 4, "first": "…", "last": "…"},
-             // set by skeleton when more saves exist than are listed (none had an incident after it); finalize drops it
+  "kind": "follow_up",       // optional: job_text, follow_up, or a setup kind (setup.md)
   "too_early": true,         // optional: a fix was saved too recently to judge; shown with ui.too_early
-  "keep": true,              // set by skeleton on the fleet keep / clean-up item; alone in an all-kept fleet it renders
+  "keep": true,              // the fleet keep / clean-up item (in the skeleton); alone in an all-kept fleet it renders
                              // as one compact line (no number, no box)
-  "cleanup": true,           // set by skeleton on a clean-up bot's finding: its one option is "Show me how to clean up X"
+  "cleanup": true,           // exactly one on each clean-up bot: its one option is "Show me how to clean up X"
   "lessons": [{"topic": "format_length", "title": "…", "now": [ … ], "copy": ""}]
              // optional, clean-up item only: that bot's repeated corrections, shown as "if you come back to it" with
              // each copy as a rule to save first; write copy in the chat's language or delete; finalize drops empty ones
@@ -73,13 +69,15 @@ The scripts fix the structure; every word the reader sees comes from this file, 
 ```
 
 ## Evidence lines
+- `ref` is a message id (`<bot prefix>:<i>`, from diag.json, the judge list or the digest). Every finding except the
+  keep item needs at least one line with a `ref`; a quote on a line with a `ref` must be in that message.
 - One line holds either `quote` (words from a source) or `text` (a plain fact), never both.
 - `who` (optional) is the speaker shown before the quote, when it isn't the user in this bot's own chat. The value
   `"bot"` is a keyword, not text: the quote is this bot's own words, and the report shows `ui.who_bot` (default: the
   bot's name). Any other value is shown as written, so write a bot's name (as in a fleet item) or a word in the report
   language. A fleet item has no bot of its own: `"bot"` there is an error; name the bot.
 - `chat` (optional) is a bot name: the quote is the user's, from that bot's chat. Shown as `ui.in_chat` ("You (in X)").
-- `date` is `MM/DD` from the skeleton; you may localise it, with one format throughout.
+- `date` is the message date, written one way throughout the report (for example `MM/DD`, or as the reader writes dates).
 
 ## Quotes
 - `orig` is the exact original words, in whatever language the chat was in. Never translate inside `orig`.
@@ -114,17 +112,20 @@ unless something about the fleet as a whole is worth saying that no fleet item s
 translation.
 
 ## Rules finalize enforces
-- `status` is one of green / yellow / red.
+- Every bot in diag.json has a row; `status` is one of green / yellow / red (the skeleton's `TODO` is an error).
+- A bot with `user_keep` is never red and has no clean-up item; a red bot has exactly one `"cleanup": true` finding,
+  and only red bots have one.
+- Every finding except the keep item cites at least one real message (`ref`); a quote with a `ref` is checked
+  against that message.
 - Every `quote.orig` must appear word for word (whitespace aside) in its `source`: the saved chats, the memory, or a bot's
   name or description. No file paths or app notices.
 - `copy` is a string or a list of `{"bot", "text"}`.
 - An evidence line with both `quote` and `text` is an error.
 - A line made only of bot names and punctuation is never treated as placeholder text.
-- With `--strict`: no `fix_check` left, and `date_label` has no `TODO`. When `lang` is not English, any visible text
+- With `--strict`: `date_label` has no `TODO`. When `lang` is not English, any visible text
   still equal to the skeleton's English placeholder (recorded in `_skeleton`), and any `ui` label equal to its English
   default, is a warning. finalize removes `_skeleton`.
-- `leads` may stay in the draft; finalize removes it from `findings.json`.
-  Use "…" to skip words inside a quote; each piece is checked on its own.
+- Use "…" to skip words inside a quote; each piece is checked on its own.
 - With `--strict`, no `needs_review` flags or `TODO` text may remain.
 - Scores become `value`; at most 3 scored findings per bot stay in `findings`, and the rest move to `more`. `top3` is chosen by value
   unless you set `"top3_locked": true` with your own `top3`.

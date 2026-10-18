@@ -2,58 +2,46 @@
 
 Every input comes from inside Grok Bot: each bot's own chat history (saved transcript pages), its profile name and description,
 and the memory block the app shows the bot. No external APIs, no logins.
-`diagnostics.py` applies the rules below and writes `diag.json`; `build_findings.py finalize` applies the scoring.
+`diagnostics.py` writes facts to `diag.json`; you judge them; `build_findings.py finalize` checks and scores.
 
-## 1. Definitions
+## 1. Facts (diag.json) and what they mean
 - **Real request**: a message the user typed. App prompts, routine wake-ups, background results and messages from other bots don't count.
-- **Correction**: judged with `rubric_correction.md` (labels.json).
-- **Incident**: corrections on the same topic in the same bot within 60 minutes count once.
-- **Occasion**: incidents more than 6 hours apart are separate occasions (`sessions` in diag.json). A late-night session
-  that crosses midnight is one occasion, not two days.
-- **Repeated correction**: same bot and topic, 2 or more incidents on 2 or more separate occasions. Incidents that all fall
-  in one occasion (`one_session`) are never repeated on their own. Before proposing anything, apply the decision procedure
-  in section 5.
-- **Strong repeated correction**: a repeated correction that also has 3+ incidents (and at least 1 incident per 100 real
-  requests, so a very busy bot isn't flagged for a handful of slips), or incidents in 5%+ of the bot's real requests.
-  It needs at least one incident of medium or high confidence.
-- **Fix candidates**: memory saves, "from now on…" sentences the bot said **to the user** (not text inside a draft,
-  quote or code it produced), and replies the judge marked as promising a lasting change. Listed once per bot
-  (`fix_candidates`, with ids), in time order, from the topic's first incident in the whole history; each group's
-  `fix_check` refers to them by id with `incidents_after` (this group's incidents after it) and `active_days_after` (days
-  the user used the bot after it). Every candidate an incident came after is kept, however old (a fix that may have
-  failed); of the rest, the 12 latest. A group with more saves than that has `fix_check_omitted` (how many, and their
-  time span) in the draft. The scripts can't tell whether one is about the group's problem, so candidates change neither
-  status nor impact until you confirm one (`writing.md`).
-- **The latest relevant fix decides.** Among the candidates you confirm as about this problem, look only at the latest:
-  - **Fixed** (improving): its `incidents_after` = 0 and `active_days_after` ≥ 2. Goes under "Already improving", no
-    proposal. This holds even if an earlier fix failed before it.
-  - **Too early to tell**: `incidents_after` = 0 but `active_days_after` < 2. Judged as if unfixed; the finding gets
-    `"too_early": true` and says when the rule was saved.
-  - **Came back after a fix**: an incident came after the latest fix (`incidents_after` ≥ 1); impact +1.
-- **Unanswered request**: a real request with no bot reply for 6 hours or more (a lower bound, taken from the next timestamp).
-  A request that is the last message in the data is not counted: the bot may not have had time to answer.
-  If several bots go quiet in the same window, it is a fleet outage (usually a plan limit), not a problem with one bot.
-- **Age** = now minus the first message. **Idle** = now minus the last use: a real request, a routine run or a message
-  from another bot (a bot that works by routine or for other bots is in use even if the user never types to it). **Share** = the bot's real requests ÷ all real requests.
-- **Days of use** are counted by working session: messages less than 6 hours apart are one session, and a session
-  belongs to the day it started, so work that runs past midnight is one day, not two.
-- **Rhythm** = the typical gap between the days the user typed to it (needs 2+ such days). **Within its rhythm**: idle ≤ 1.5 × that gap + 1 day.
-- **Stopped habit**: used on 5+ days with a rhythm of a week or less, and now idle ≥ max(14 days, 4 × that rhythm).
-  Its reason is "stopped", not "barely used", whatever its share; the skeleton titles its clean-up item that way.
-- **Too new to judge**: age under 14 days, and the bot started in the later half of the history covered (a bot added
-  recently to an older fleet). It gets no clean-up verdict; its other checks still run.
+- **Message id** (`ref`): `<bot prefix>:<i>`, the event's place in that bot's timeline. Every finding cites one or more.
+- **Correction**: judged by you with `rubric_correction.md` (labels.json).
+- **Incident**: corrections on the same topic in the same bot within 60 minutes count once (`incidents`).
+- **Occasion**: incidents more than 6 hours apart are separate occasions (`correction_topics.*.occasions`). A late-night
+  session that crosses midnight is one occasion, not two days.
+- **Repeated correction**: same bot and topic, 2 or more incidents on 2 or more separate occasions. Incidents that all
+  fall in one occasion are steering of one task, never repeated on their own. Apply section 5 before proposing anything.
+- **Fixes after** (`fixes_after`): memory saves and replies you marked as promising a lasting change, from the topic's
+  first incident on, each with `incidents_after` (this topic's incidents after it) and `active_days_after` (days of use
+  after it); texts in the bot's `fixes`. Whether one is about the problem is yours to decide. The latest relevant one decides:
+  - **Fixed** (improving): `incidents_after` = 0 and `active_days_after` >= 2. Goes under "Already improving", no proposal.
+  - **Too early to tell**: `incidents_after` = 0 but `active_days_after` < 2: judged as if unfixed, `"too_early": true`.
+  - **Came back after a fix**: `incidents_after` >= 1; impact +1.
+- **Waits** (`waits`): a real request with no bot reply for 6 hours or more (a lower bound, up to the next reply). The
+  last messages in the data (`unanswered_at_end`) may simply not have been answered yet. Waits that overlap with another
+  bot's (`overlaps_other_bot`, `fleet.overlapping_waits`) point to a fleet outage (usually a plan limit), not one bot.
+- **Usage**: `age_days` = now minus the first message; `idle_days` = now minus the last use (a real request, a routine
+  run or a message from another bot); `idle_typed_days` counts typed requests only; `share` = the bot's real requests
+  / all real requests. `active_days` count working sessions (messages under 6 hours apart are one session, on the day it
+  started). `typical_gap_days` and `longest_gap_days` are the gaps between those days: the bot's own rhythm.
+- **Exact repeats**: `resends` (the same text again within 30 minutes: one request), `repeated_texts` (the same text on
+  2+ days), `fleet.same_text_in_bots`, and `fleet.group_messages` (a group turn is mirrored into every member's chat:
+  one message, not one per bot). Requests that repeat in different words are for you to find in the digest.
+- **Keep** (`user_keep`): the latest message you labelled `keep` (the user said to keep the bot or that it is paused on purpose).
 
-## 2. Status (first match wins)
-| status | rule |
+## 2. Status (you decide; first match wins)
+| status | when |
 |---|---|
-| Clean up (`red`) | Age ≥ 3 days, idle ≥ max(3 days, half its age), share < 5% or a stopped habit (any share), not within its rhythm, and not too new to judge. *Or* its whole job is already done by another bot that is in use, and its history shows no use of its own. |
-| Needs work (`yellow`) | A strong repeated correction with a shared cause that is not fixed; *or* unanswered requests caused by the bot itself (not a fleet outage); *or* a safety problem visible in its chats (for example, it printed another bot's internal settings). |
-| Fine (`green`) | Everything else. An empty description, a weak repeated correction, a stated preference or another lead (section 4) can still produce a proposal, but it doesn't change the status. A one-off correction never does: no rules from one mistake. |
+| Clean up (`red`) | The user has stopped using it: it has been idle for long compared with its age and its own rhythm, no routine or other bot still uses it, and nothing in its chats says it is still wanted (a keep statement, seasonal or periodic use, a bot set up recently). *Or* its whole job is already done by another bot that is in use, and its history shows no use of its own. |
+| Needs work (`yellow`) | A repeated correction with a shared cause that is not fixed (section 5); *or* unanswered requests caused by the bot itself (not a fleet outage); *or* a safety problem visible in its chats (for example, it printed another bot's internal settings). |
+| Fine (`green`) | Everything else. An empty description, a stated preference or another lead (section 4) can still produce a proposal, but it doesn't change the status. A one-off correction never does: no rules from one mistake. |
 
-Why relative thresholds: a fleet may have only a few days of history, so fixed counts ("5 corrections a week") mean nothing yet.
-Share, half-of-age idle and per-request rates scale with however much history exists. A bot younger than 3 days can't be "Clean up" by the idle rule,
-nor can a bot used on a slow but steady rhythm (monthly), one that is too new to judge, or one whose routine still runs.
-`diagnostics.py` suggests a status from these rules; you set the final one with the procedure in section 5.
+Judge use against the bot's own history, not against a fixed count: a small share is not a reason on its own (a bot used
+once a month for one job is in use), and a fleet may have only a few days of history. Read the last messages before
+calling a bot Clean up: a user who parks a bot on purpose usually says so there. A bot with `user_keep` is never Clean
+up and gets no clean-up item (finalize refuses it). Name the reason for every status in `why`.
 
 ## 3. Proposal scoring
 Every proposal carries `score = {impact, confidence, effort, reversibility, basis}`. `basis` is an internal note (it goes
@@ -73,31 +61,25 @@ to `scores.md` only and is never shown in the report), so it needs no translatio
 - **Information only** (`"info": true`): one-time events and keep/remove summaries. They get no score and no Apply box.
 - **Nothing qualifies**: say so. A bot with no proposal shows "Nothing major to fix."
 
-## 4. Extra checks (diagnostics.py)
-Each check gives leads; keep a lead only after reading the actual messages.
-| check | definition | usually |
+## 4. What to look for (facts in diag.json, the digest, and the chats)
+Keep an item only after reading the actual messages; cite them by `ref`.
+| check | facts to start from | usually |
 |---|---|---|
-| Unanswered requests / outage | real request with no reply for 6+ hours; overlapping windows across bots = fleet outage | real; an info item (the bot's own, or once for the fleet), never scored. Limit: messages sent while a bot could not run at all (e.g. after a plan limit) may be missing from its history, so silent outages can be undercounted |
-| Skipped question cards | the app reports that the user moved on without tapping a choice | mostly noise (the user often answers in text instead); a finding only when one bot asks several of the same kind of unneeded question (default impact 1) |
-| Promises without delivery | the judge marked the reply `later` (it promised to do or send something later; any language), or the built-in cue words ("I'll let you know…") then a nudge ("hello?"), or a very short "…?" after an hour of silence. Each lead gives the user's next message | check by reading; often already delivered |
-| Stalls | 3+ short user messages in a row (40 characters or less, over 10+ minutes) with no reply in between, shorter than an unanswered request | check by reading: a stuck bot, an error, or the user typing ahead. One stall is information at most; a finding only if it happens on 2+ days (default impact 1) |
-| Chat language | replies in another writing system than the one the user writes this chat in (code, links and paths ignored), after a message in the chat's language, on 2+ days | low priority: a finding (impact 1) only if the user minded it (asked for their language, or said so), else nothing or a short info line |
-| Memory facts | facts with a date that has passed, or with "currently/now" (cue words) older than 3 days; near-duplicates; and, in any language, the facts listed next to the corrections, preferences and keep statements judged in that chat after the fact was learned (`newer_judged`): compare their meaning | a finding only if later chats contradict the fact or it has clearly expired (default impact 1; 2 if the bot acted on the stale fact); duplicates rarely matter |
-| Description vs. use | no saved job description, or one that contradicts what the bot learned or what the user said later | real; the fix is text the user sends that bot to remember (personal bots may have no description field) |
-| Repeated work across days | similar requests on 3+ different days. Left out: messages the judge labelled correction (they are in the correction groups), keep or ack, messages similar to one labelled ack (thanks or approval, not a request), the same text resent within 30 minutes (one request), and group-chat turns (mirrored into every member's chat) | routine candidate (score with effort 2). If most of them are follow-ups (sent within 30 minutes of the bot's answer: "test it too", "continue"), the skeleton drafts a standing rule instead (`kind` `follow_up`, effort 1): a routine can't add a follow-up |
-| Same request in several bots | similar text across bots (attachment notices and file paths are stripped first); group-chat turns are one message, not one per member bot, and are left out | noisy (shared links, the same post pasted to several bots); confirm by topic |
-| One bot doing another's job | a request closer to another bot's description than its own, counted only after that bot existed | noisy; keep only clear cases on 2+ days |
+| Unanswered requests / outage | `waits`, `unanswered_runs` (3+ messages in a row with no reply), `fleet.overlapping_waits` | real when the bot itself went silent: an info item, never scored. One outage across bots: one fleet info item. Messages sent while a bot could not run may be missing, so silent outages can be undercounted |
+| Skipped question cards | `skipped_questions` (the app reports the user moved on without tapping a choice) | mostly noise; a finding only when one bot asks several of the same kind of unneeded question (impact 1) |
+| Promises without delivery | `promises` (replies you marked `later`, with the user's next message) | check by reading; often already delivered |
+| Chat language | `scripts` (writing systems of the user's messages, replies in another script, days) | low priority: a finding (impact 1) only if the user minded it |
+| Memory facts | `memory.facts` with learned dates, `past_dates`, `exact_duplicates`, and `newer_labelled` (what you labelled in that chat after the oldest fact) | a finding only if later chats contradict the fact or it has clearly expired (impact 1; 2 if the bot acted on it) |
+| Description vs. use | `description`, `description_empty`, how the bot is used | real; the fix is text the user sends that bot to remember |
+| Repeated work across days | the digest (every message with its date), `repeated_texts` | the same request by hand on 3+ days: a routine candidate (effort 2). The same follow-up after the bot's answers ("test it too"): a standing rule (`kind` `follow_up`, effort 1). Not a request: thanks, approvals, keep statements, resends, group turns, corrections (they are in the correction topics) |
+| Same request in several bots / one bot doing another's job | the digest, `fleet.same_text_in_bots`, `fleet.pasted_answers` | confirm by topic; a shared link or one post pasted around is not overlap |
 | Safety events | seen while reading: a secret or code printed in a chat or written to a log, another bot's internal settings shown, a risky action taken without asking | one fleet info item per kind of event, naming the bot and date; never quote or repeat the secret. Counts toward "Needs work" for that bot only if it did it itself |
-| Secrets the user typed | the user pasted a password, key or login code into a chat themselves | not a bot's safety event and no status effect. A lasting secret (password, key, token) gets one line in the safety info item ("you shared a password in X's chat on DATE; consider changing it"); a one-time code that has expired gets nothing. Never quote it |
-| Bots not in the list | an event about a bot that isn't in `bots.json` (removed, renamed, or someone else's), seen only in another bot's chat | the fleet safety info item, named as written in that chat and said to be no longer in the list; never a row and no status effect on any listed bot. Don't open files it may have written to check |
+| Secrets the user typed | the user pasted a password, key or login code into a chat themselves | not a bot's safety event and no status effect. A lasting secret gets one line in the safety info item ("consider changing it"); an expired one-time code gets nothing. Never quote it |
+| Bots not in the list | an event about a bot that isn't in `bots.json`, seen only in another bot's chat | the fleet safety info item, named as written in that chat; never a row and no status effect. Don't open files it may have written |
 
-Leads that are not corrections (skipped questions, stale memory, promises without delivery, stalls) can become scored findings
-with the default impact above, confidence from how clear the evidence is, and effort 1.
-Stale memory and promises do not depend on words in one language: the judge marks promises (`later`) and keep
-statements in any language, memory facts come with the judged messages after them, and some checks need no words
-(a date that has passed; a very short "…?" after an hour of silence; several short nudges with no reply).
-Setup checks (group chats, plugins instead of the browser, safety rules kept only in memory, routines that run very
-often) are in `setup.md`. They never change a bot's status.
+Leads that are not corrections can become scored findings with the default impact above, confidence from how clear
+the evidence is, and effort 1. Setup checks (group chats, plugins instead of the browser, safety rules kept only in
+memory, routines that run very often) are in `setup.md`. They never change a bot's status.
 
 ## 5. Decision procedure (apply in this order; two runs on the same data should reach the same answer)
 1. **Shared cause.** For each repeated group, read every incident and write the one rule that would have prevented it.
@@ -106,7 +88,7 @@ often) are in `setup.md`. They never change a bot's status.
      a format, a step, or the kinds of detail to confirm), so that someone reading it knows exactly when it applies;
    - the same rule would have prevented **every** incident (or all but one, when there are 4+);
    - it doesn't conflict with what the data shows: a "confirm/ask more" rule is never a shared cause for a bot whose
-     question cards the user often skips (the group's `confirm_conflict` is true), because it would make that worse.
+     question cards the user often skips (`skipped_questions`), because it would make that worse.
 
    **The paste test decides specific vs generic.** Could the rule be pasted into any other bot unchanged and still make
    sense? Then it is generic and decides nothing: "confirm unclear requests in one line", "ask if ambiguous", "read the
@@ -133,22 +115,13 @@ often) are in `setup.md`. They never change a bot's status.
    **Sub-part:** if a specific rule covers only some incidents, and those fall on 2+ separate occasions, keep that part
    as the group (recount it) and drop the rest.
 2. **Merge across topics.** Merge two groups of the same bot into one only if the specific rule from step 1 is the same
-   for both (the judge put one problem under two topics). Recount incidents and occasions and apply the strong rule
-   from section 1 to the merged numbers. Never merge just because the topics sound related.
+   for both (the judge put one problem under two topics). Recount incidents and occasions. Never merge just because the topics sound related.
 3. **Normal iteration, not a problem.** Drop a group (no proposal, no status effect) when any of these holds:
-   - `one_session`: all incidents in one occasion while building or designing one new thing (steering a draft is the work);
+   - all incidents in one occasion while building or designing one new thing (steering a draft is the work);
    - the user changes their own mind about taste (they asked for X, saw it, now want Y) and the bot did what was asked;
    - the corrections are rounds of edits on one output, each asking for a new change rather than repeating an old one.
    A group is a problem when the user has to repeat the **same** instruction, or the bot breaks a rule it was given or saved.
-4. **Fixes.** Resolve `fix_check` with the definitions in section 1: the latest relevant fix and the numbers decide,
+4. **Fixes.** Use `fixes_after` with the definitions in section 1: the latest relevant fix and the numbers decide,
    not your impression.
-5. **Status.** Start from the suggested status. Change it only for these reasons, and name them in `why`:
-   (a) step 1 found no shared cause for a strong group → it no longer counts; (b) step 3 dropped it → it no longer
-   counts; (c) its latest relevant fix is fixed per section 1 → it no longer counts; (d) after a merge or sub-part in
-   steps 1–2 a group became strong → `yellow`; (e) a safety event the bot caused itself → `yellow`; (f) the bot's whole
-   job is done by another bot in use → `red`, unless the user said to keep it (`user_keep`).
-   A bot with `user_keep` (labels type `keep`: the user said to keep it or that it is paused on purpose) is never `red`
-   and gets no clean-up item: its suggested status is already `green`, with the reason "paused by you".
-   Reasons combine: when a bot has several strong groups, each needs its own reason from (a)–(c) before the bot can
-   become `green` (e.g. "(a) for format, (c) for tone"). If any strong group remains, the bot stays `yellow`. No other
-   reason changes the status.
+5. **Status.** Set it with section 2 after steps 1-4: a repeated group still standing (shared cause, not normal
+   iteration, not fixed) makes the bot `yellow`; name the reason in `why`. A bot with `user_keep` is never `red`.
