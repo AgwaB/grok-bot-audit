@@ -75,6 +75,27 @@ For an `old_skill` snapshot that has no `replay` command, replace the "Don't cal
 steps 1-2, run `mkdir -p $W && cp -r <replay folder>/transcripts <replay folder>/bots.json $W/`, and pass
 `--now "<now from replay.json>"` to diagnostics.py."
 
+## Prompt suite and trigger tests
+
+A second, synthetic eval lives outside the repo (it has non-English prompts) at
+`/workspace/bot-audit-eval/suite/`: `make_suite.py` builds 15 cases (8 dev, 7 held-out) from frozen
+expectations in `cases.json` (hash in `FROZEN.sha256`, written before any run). Each case is a user request
+(short, vague, typo'd, frustrated or specific; en, ko, ja, es, de, mixed) plus a fleet replay covering one bot,
+many bots, routine-only, new bots, all clean (correct answer: no proposals), ambiguous, multi-language,
+hand-off, group chat and stall cases.
+
+- `score_suite.py` scores the script stage (statuses, flags, reasons, leads) on every case.
+- `grade_final.py CASE --findings F --chat C` scores a full host run (final statuses, red set, no
+  proposals where clean, answer names the right bots, chat language, no Delete/Merge options). For a
+  run without the skill, hand-code its report into `--coded coded.json`.
+- `runs/` holds with-skill vs no-skill runs and `RESULTS.md`.
+- Never tune on the held-out cases; fix generator bugs only and log them in `NOTES.md`.
+
+`tests/triggers.json` holds 20 trigger queries (half should start this skill, half are near misses),
+split dev / held-out, with non-ASCII text escaped. Judge the SKILL.md description against them with a
+fresh-context model when one is available, otherwise with the rubric in
+`/workspace/bot-audit-eval/triggers/results.md`; change the description only from dev results.
+
 ## Unit tests
 ```bash
 python3 tests/test_pipeline.py      # end to end on the synthetic fleet, English and Japanese rendering

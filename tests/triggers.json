@@ -1,0 +1,145 @@
+{
+ "note": "Trigger queries for the audit-my-bots description (tests/EVAL.md, trigger section). Frozen 2026-10-18 before the description was tuned; tune only on split=dev.",
+ "queries": [
+  {
+   "id": "t01",
+   "split": "dev",
+   "should_trigger": true,
+   "query": "audit my bots",
+   "note": "the canonical phrase"
+  },
+  {
+   "id": "t02",
+   "split": "dev",
+   "should_trigger": true,
+   "query": "\ub0b4 \ubd07\ub4e4 \uc694\uc998 \uc81c\ub300\ub85c \uc77c\ud558\uace0 \uc788\ub294\uc9c0 \ubd10\uc904\ub798?",
+   "note": "ko: are my bots doing their job lately"
+  },
+  {
+   "id": "t03",
+   "split": "dev",
+   "should_trigger": true,
+   "query": "Which of my bots am I not even using anymore?",
+   "note": "usage / clean-up question"
+  },
+  {
+   "id": "t04",
+   "split": "dev",
+   "should_trigger": true,
+   "query": "why does my recipe bot keep ignoring what I told it",
+   "note": "repeated mistake of one bot"
+  },
+  {
+   "id": "t05",
+   "split": "dev",
+   "should_trigger": true,
+   "query": "\u30dc\u30c3\u30c8\u304c\u5897\u3048\u3059\u304e\u305f\u304b\u3089\u6574\u7406\u3057\u305f\u3044",
+   "note": "ja: too many bots, want to tidy them"
+  },
+  {
+   "id": "n01",
+   "split": "dev",
+   "should_trigger": false,
+   "query": "make me a new bot that summarizes my email",
+   "note": "create a bot"
+  },
+  {
+   "id": "n02",
+   "split": "dev",
+   "should_trigger": false,
+   "query": "audit my smart contract for reentrancy bugs",
+   "note": "audit, but code"
+  },
+  {
+   "id": "n03",
+   "split": "dev",
+   "should_trigger": false,
+   "query": "review this PR please",
+   "note": "review, but a pull request"
+  },
+  {
+   "id": "n04",
+   "split": "dev",
+   "should_trigger": false,
+   "query": "delete the Old Quiz bot",
+   "note": "one action on one bot (the skill cannot delete)"
+  },
+  {
+   "id": "n05",
+   "split": "dev",
+   "should_trigger": false,
+   "query": "what bots do I have?",
+   "note": "a plain list, no audit"
+  },
+  {
+   "id": "t06",
+   "split": "heldout",
+   "should_trigger": true,
+   "query": "can you go through my agents and tell me what's broken",
+   "note": "\"agents\" instead of bots"
+  },
+  {
+   "id": "t07",
+   "split": "heldout",
+   "should_trigger": true,
+   "query": "Revisa mis bots y dime cu\u00e1les sobran",
+   "note": "es: review my bots, which are surplus"
+  },
+  {
+   "id": "t08",
+   "split": "heldout",
+   "should_trigger": true,
+   "query": "I feel like I'm not getting much out of my bots. How could I use them better?",
+   "note": "how to use bots better"
+  },
+  {
+   "id": "t09",
+   "split": "heldout",
+   "should_trigger": true,
+   "query": "\ubd07 \uc815\ub9ac \uc880 \ud558\uc790. \uacb9\uce58\ub294 \uac70 \uc788\uc73c\uba74 \uc54c\ub824\uc918",
+   "note": "ko: tidy the bots, tell me overlaps"
+  },
+  {
+   "id": "t10",
+   "split": "heldout",
+   "should_trigger": true,
+   "query": "health check on all my grok bots pls",
+   "note": "health check wording"
+  },
+  {
+   "id": "n06",
+   "split": "heldout",
+   "should_trigger": false,
+   "query": "\ub0b4 \uba54\uc77c \ubd07 \uc774\ub984\uc744 '\uba54\uc77c \ube44\uc11c'\ub85c \ubc14\uafd4\uc918",
+   "note": "ko: rename one bot"
+  },
+  {
+   "id": "n07",
+   "split": "heldout",
+   "should_trigger": false,
+   "query": "Check my Discord bot's code, it crashes on startup",
+   "note": "a bot, but code and not a Grok Bot"
+  },
+  {
+   "id": "n08",
+   "split": "heldout",
+   "should_trigger": false,
+   "query": "Set up a routine for my news bot to run every morning at 7",
+   "note": "create a routine"
+  },
+  {
+   "id": "n09",
+   "split": "heldout",
+   "should_trigger": false,
+   "query": "Audit our AWS IAM permissions",
+   "note": "audit, unrelated"
+  },
+  {
+   "id": "n10",
+   "split": "heldout",
+   "should_trigger": false,
+   "query": "Why did you get that answer wrong just now?",
+   "note": "one mistake in this chat, not a bot audit"
+  }
+ ]
+}
