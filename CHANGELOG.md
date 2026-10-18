@@ -1,8 +1,8 @@
 # Changelog
 
 ## 0.1.0
-- `audit-my-bots` skill: checks up on your Grok Bots from their own chat history (read-only) and suggests fixes,
-  merges and removals, each backed by word-for-word quotes.
+- `audit-my-bots` skill: checks up on your Grok Bots from their own chat history (read-only) and suggests fixes
+  and keep or clean-up steps, each backed by word-for-word quotes. Plugin description updated to match.
 - Analysis scripts, correction rubric, status and scoring criteria, all bundled next to `SKILL.md`
   in `skills/audit-my-bots/` (`scripts/`, `references/`).
 - The scripts fix only the report's shape (sections, table, order, scores, quote checks, HTML/PDF layout). All wording,
