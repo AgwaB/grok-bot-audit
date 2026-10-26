@@ -51,6 +51,9 @@ messages or non-Latin scripts) and ends with the next `--from`; append that batc
 echo, then the next batch. Each run rewrites `labels.json` from the whole file. A refused line (unknown item or type,
 or a `user_start` mismatch) must be fixed before going on. No corrections or preferences at all: an empty file, and
 `--label` still runs (every item becomes `none`).
+On a later audit, `--list` hides items already labelled (`-- no new items` when there is nothing new). Label only
+what it prints. `--label` keeps those earlier labels; a line for one of them is refused. Leave the file empty when
+nothing new is a correction, preference, keep or ack, and still run `--label`.
 
 ## Types
 | type | meaning | label |

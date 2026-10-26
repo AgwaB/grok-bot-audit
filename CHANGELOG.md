@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+- Incremental audits. Each finished run saves a per-bot checkpoint in the private run area
+  (`/workspace/bot-audit-run/state`, mode 0700): the transcript pages, the labels, and the point to resume from.
+  The next run reads and labels only what is new and merges it with those labels, so the report still covers the
+  whole history. Nothing is saved until the report checks pass. If the checkpoint can't be trusted (the chat got
+  shorter, was rewritten or replaced, the bot is new, renamed or recreated, the labels are missing or unreadable,
+  or the labeling rules changed), that bot is read in full. Ask to start over ("audit from scratch", or the same
+  wish in your language) to ignore the checkpoints. The weekly re-check uses the same path and stays quiet when
+  the summary is unchanged.
+- PDF: if headless Chrome writes the file and then does not exit, the report still keeps that PDF.
+
 ## 0.1.0
 - `audit-my-bots` skill: checks up on your Grok Bots from their own chat history (read-only) and suggests fixes
   and keep or clean-up steps, each backed by word-for-word quotes. Plugin description updated to match.

@@ -11,6 +11,7 @@ this skill.
 2. **Replay, so runs repeat.** Real chats change and fetching needs ReadTranscript, so evals run on frozen inputs: a
    replay folder holds `bots.json`, `transcripts/<id>/page_*.txt` and `replay.json` (`{"now": ..., "self": <id, optional>}` so idle days
    don't drift; `self` is the auditing bot to skip, if it is in the fleet). With `AUDIT_REPLAY_DIR` set, `SKILL.md` tells the agent to run `sessions.py replay` instead of steps 1-2.
+   `checkpoint.py commit` does nothing when that variable is set or the work folder has `replay.json`, so a replay never writes the private checkpoint.
    Everything after that is the normal path.
 3. **Fresh agent per run, with and without the change.** Each run is a new agent that has only the prompt below. Run the
    current skill (`with_skill`) and a baseline (`old_skill`: a snapshot of the last release, for example
