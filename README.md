@@ -55,6 +55,7 @@ the fonts of the machine that made it.
 |---|---|
 | `skills/audit-my-bots/SKILL.md` | the end-to-end procedure the bot follows, including the safety rules |
 | `skills/audit-my-bots/scripts/sessions.py` | list bots (name and description only), save transcript pages, build per-bot timelines |
+| `skills/audit-my-bots/scripts/checkpoint.py` | per-bot resume point in the private run area: plan, fetch only what is new, merge labels, save after the report checks pass |
 | `skills/audit-my-bots/scripts/judge_inputs.py` | exports every reply for the rubric, records labels, and prints a digest of every typed message with its id |
 | `skills/audit-my-bots/scripts/diagnostics.py` | facts only: usage, rhythm, waits and overlapping waits, routine run statistics, labelled corrections grouped and counted, memory facts, exact repeats, pasted answers, bot-to-bot messages, group chats |
 | `skills/audit-my-bots/scripts/build_findings.py` | `skeleton`: the frame the bot fills; `finalize`: checks structure, message ids, quotes word for word and the keep / clean-up rules, scores, caps 3 per bot, picks the top 3 |
@@ -68,6 +69,7 @@ the fonts of the machine that made it.
 - Secret and key files, settings, app databases and search indexes are never opened.
 - Quotes must match the chats word for word, or `finalize` fails. Numbers come only from the scripts.
 - Work files go to a new private folder per run, `/workspace/bot-audit-run/<date-time>-<random>/`, so bots sharing one computer never mix runs.
+- The resume point for the next audit (pages and labels) stays in `/workspace/bot-audit-run/state`, mode 0700, on this computer. It is not part of the plugin.
 
 ## Test
 ```bash

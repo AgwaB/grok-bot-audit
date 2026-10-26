@@ -55,7 +55,12 @@ Create it only if the user says yes. It runs without the user watching, so its i
 - Report only: run this skill through step 8 with a new work folder, send the chat summary and the files. No
   multi-select question and no changes inside the routine (approval requests expire after about 10 minutes); end
   the message by saying the user can reply to pick items.
+- Incremental: follow the skill, including its checkpoint (`checkpoint.md`). Do not pass `plan --full`. Each run
+  reads and labels only what is new; the report still covers the whole history. `commit` still runs after the
+  checks pass, including when you then stay quiet, so the next Monday starts after this run.
 - Quiet when nothing changed: pass the newest earlier `report/summary.json` under `/workspace/bot-audit-run/` to
-  `make_report.py --previous`; if it prints `UNCHANGED`, end without sending anything.
-- Safe to re-run: it only reads chats and writes a new folder, so a repeated or retried run does no harm.
+  `make_report.py --previous`; if it prints `UNCHANGED`, end without sending anything. A chat with no new messages
+  can still change the summary, because a bot can become idle as time passes; stay quiet only when it prints `UNCHANGED`.
+- Safe to re-run: it only reads chats and writes a new folder, so a repeated or retried run does no harm. A checkpoint
+  is saved only after the report checks pass. A failed run leaves the previous one, and the next run reads that part again.
 Write the instruction in the user's language, with Monday 9:00 in the user's real time zone.

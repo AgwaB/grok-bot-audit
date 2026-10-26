@@ -16,7 +16,7 @@ Design rules: references/design-notes.md.
 Fonts: generic system stacks, nothing embedded; the host bot may override them with findings.json "fonts".
 PDF: headless Chrome/Chromium print-to-pdf with a temporary profile that is removed afterwards.
 """
-import argparse, html, json, os, re, shutil, subprocess, sys, tempfile
+import argparse, html, json, os, re, shutil, signal, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 E = lambda s: html.escape(str(s if s is not None else ''), quote=True)
@@ -435,16 +435,66 @@ def chrome():
         p = shutil.which(c)
         if p: return p
 
+def pdf_file_ok(path):
+    try:
+        with open(path, 'rb') as fh:
+            return fh.read(5) == b'%PDF-' and os.path.getsize(path) > 5
+    except OSError:
+        return False
+
+def stop_chrome(proc):
+    """Headless Chrome starts a process group. Stop the group so a stuck print does not leave children."""
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        proc.wait(timeout=5)
+
 def to_pdf(html_path, pdf_path):
     exe = chrome()
     if not exe: print('pdf: no Chrome/Chromium found', file=sys.stderr); return False
     prof = tempfile.mkdtemp(prefix='rep-chrome-')
+    proc = None
     try:
-        r = subprocess.run([exe, '--headless=new', '--no-sandbox', '--disable-gpu', f'--user-data-dir={prof}',
-                            '--no-pdf-header-footer', '--virtual-time-budget=3000', f'--print-to-pdf={pdf_path}',
-                            'file://' + os.path.abspath(html_path)], capture_output=True, text=True, timeout=120)
-        return r.returncode == 0 and os.path.exists(pdf_path)
+        proc = subprocess.Popen([exe, '--headless=new', '--no-sandbox', '--disable-gpu', f'--user-data-dir={prof}',
+                                 '--no-pdf-header-footer', '--virtual-time-budget=3000', f'--print-to-pdf={pdf_path}',
+                                 'file://' + os.path.abspath(html_path)],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
+        os.set_blocking(proc.stderr.fileno(), False)
+        buf, wrote, deadline = b'', False, time.time() + 120
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                break
+            try:
+                chunk = os.read(proc.stderr.fileno(), 65536)
+            except BlockingIOError:
+                chunk = b''
+            if chunk:
+                buf += chunk
+                wrote = wrote or b'bytes written to file' in buf
+            if wrote and pdf_file_ok(pdf_path):
+                # The file is complete. Chrome often never exits when the session bus is missing.
+                grace = time.time() + 2
+                while time.time() < grace and proc.poll() is None:
+                    time.sleep(0.05)
+                break
+            time.sleep(0.05)
+        if proc.poll() is None:
+            stop_chrome(proc)
+            return wrote and pdf_file_ok(pdf_path)
+        return proc.returncode == 0 and pdf_file_ok(pdf_path)
     finally:
+        if proc is not None and proc.poll() is None:
+            stop_chrome(proc)
         shutil.rmtree(prof, ignore_errors=True)
 
 def visible(h):

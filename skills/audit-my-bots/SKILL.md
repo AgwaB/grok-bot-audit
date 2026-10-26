@@ -22,7 +22,7 @@ the proposals they pick. Nothing changes without their pick.
 
 ## Safety rules (always)
 - Read-only on bot data. From the app, read only `profile.json` (name and description only) and the transcripts you fetch
-  with ReadTranscript. Files in the work folder `$W` (pages, timelines, `diag.json`…) are yours to read.
+  with ReadTranscript. Files in `$W` are yours to read. Checkpoints stay in the private run area, never the repo.
 - Never open, print or copy: kv metadata, `blobEncryptionKey`, `box-secrets.json`, `host-secrets.json`, `chrome-cookie-seed.json`,
   `gateway.json`, `store.db`, `search-index.db` or other app databases, `settings.json`, browser profiles, or login form values.
 - Never quote secrets (passwords, codes, keys, tokens) anywhere: not in the report, the chat, or `labels.json` evidence,
@@ -44,14 +44,14 @@ later command with `source <that printed path> &&`, the literal path (`$W` is no
 SKILL="${SKILL:-<folder that holds this SKILL.md>}"
 [ -f "$SKILL/scripts/sessions.py" ] || SKILL="$(dirname "$(dirname "$(find /home/box/agent-data/plugins ~/.cursor/plugins \
   -path '*/audit-my-bots/scripts/sessions.py' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)")")"
-mkdir -p /workspace/bot-audit-run   # one new private folder per run: other bots share this computer
+mkdir -p /workspace/bot-audit-run && chmod 700 /workspace/bot-audit-run   # private run area: other bots share this computer
 W="${W:-$(mktemp -d "/workspace/bot-audit-run/$(date +%F-%H%M%S)-XXXX")}"; mkdir -p "$W/tmp"   # scratch files: $W/tmp
 printf 'export SKILL=%q W=%q AUDIT_REPLAY_DIR=%q\n' "$SKILL" "$W" "${AUDIT_REPLAY_DIR:-}" > "$W/env.sh"; echo "$W/env.sh"
 ```
 Needs `python3`. The PDF needs Chrome or Chromium. The report uses system fonts; nothing else to install.
 
 **Test mode** (`$AUDIT_REPLAY_DIR` set): if asked for a `commands.log`, log every command from the first (above) on.
-Run `replay` (step 1), then `parse` (end of step 2); no fetching. Report dates (`date`, lede, footer) use the
+Run `replay` (step 1), then `parse` (end of step 2); no fetching and no checkpoint. Report dates (`date`, lede, footer) use the
 replay's `now`; the weekly offer and routine times use the user's real time zone, never the replay's UTC offset; evidence dates stay as recorded.
 
 ## 1. List the bots
@@ -66,20 +66,23 @@ your name is not you unless the id matches. Only bots in `bots.json` are rows in
 it if any, and the command prints what it skipped). Every bot it lists is audited, also one with your own name.
 
 ## 2. Fetch each bot's history yourself
-For every bot in `bots.json`, call **ReadTranscript** with `agent_id=<id>`, `limit=200` and `write_to_file=true`
-(it may sit under the `cursor` namespace through CallDynamicTool). It returns the newest page and a file path. Save pages:
+```bash
+python3 "$SKILL/scripts/checkpoint.py" plan --work "$W"
+```
+`plan` prints `full` or `incremental` per bot (`references/checkpoint.md`). Call **ReadTranscript** yourself
+(`agent_id=<id>`, `limit=200`, `write_to_file=true`, via CallDynamicTool if it sits under the `cursor` namespace). Save a
+round, then ask what is next, until every bot prints `stop`:
 ```bash
 python3 "$SKILL/scripts/sessions.py" save-page --work "$W" "<id>=<file path>" ["<id2>=<file path>" ...]
+python3 "$SKILL/scripts/checkpoint.py" next --work "$W" <id> [<id2> ...]
 ```
-It prints `start=A end=B total=N` per page. Call ReadTranscript again with `before=A`, and repeat until a page prints
-`start=0`. One bot's pages come one after another (`before` is only known from the last page), and a big bot can take
-dozens of pages, so fetch different bots side by side if you can make several calls at once, save each round's pages in
-one `save-page` call, and send the user a one-line progress note every few bots. Then:
+Fetch several bots side by side; a one-line progress note every few bots. Then bring the earlier pages back and parse:
 ```bash
+python3 "$SKILL/scripts/checkpoint.py" assemble --work "$W"
 python3 "$SKILL/scripts/sessions.py" parse --work "$W"
 ```
-If it warns that pages don't reach the start or the end, fetch the missing pages before going on. Each bot's
-messages are now in `$W/timelines/<id>.json` (`events`: role, ts, text), if you need more context later.
+If `parse` warns that pages don't reach the start or the end, fetch the missing pages, then assemble and parse again.
+Messages are in `$W/timelines/<id>.json`. From scratch ("audit from scratch", or that wish in the user's language): `plan --full`.
 
 ## 3. Export the messages to judge
 ```bash
@@ -88,8 +91,8 @@ python3 "$SKILL/scripts/judge_inputs.py" --work "$W"
 Every typed reply after a bot message, in any language, is a numbered item (no word filter: you judge each one).
 ## 4. Judge every item
 Read `$SKILL/references/rubric_correction.md` and judge each item by its steps. Work in batches:
-1. `judge_inputs.py --work "$W" --list --short --from 1` prints one batch of about 10 KB (how many items depends on the
-   chats) and its last line gives the `--from` of the next batch; `--show <n>` prints an item's full messages.
+1. `judge_inputs.py --work "$W" --list --short --from 1` prints one batch of about 10 KB; the last line gives the
+   `--from` of the next batch. Later runs list only new items (`no new items` means nothing new to label). `--show <n>` prints one item.
 2. Append that batch's lines to `$W/labels.tsv`: one line per **correction, preference, keep or ack only** (`keep`: keep
    or paused on purpose; `ack`: only thanks), 7 columns `n type topic confidence evidence promised user_start` (rubric).
 3. `judge_inputs.py --work "$W" --label "$W/labels.tsv"`: it echoes each line with the item's user text. A refused line
@@ -135,12 +138,12 @@ pdftotext "$W"/report/fleet_report_*.pdf "$W/tmp/report.txt"
 empty boxes, English labels in a non-English report. Fix every one. Then look at `page1.png` with your image reader and
 read `$W/tmp/report.txt` (all pages) to check: (1) every heading, label and sentence is in the user's language; (2) no
 placeholder text is left; (3) no empty section; (4) quotes read as real messages, not cut mid-word. Fix `findings.json`
-(or the draft and finalize again) and rebuild if any fails.
+(or the draft and finalize again) and rebuild if any fails. When every check passes, save the checkpoint (a replay saves nothing): `python3 "$SKILL/scripts/checkpoint.py" commit --work "$W"`.
 
 ## 8. Tell the user
 Send one message:
-- First sentence: the report's opening sentence, copied from `$W/report/lede.txt` (make_report writes the rendered
-  one there and prints which `ui` key it used: `lede_all`, `lede_y`, `lede_r` or `lede_none`).
+- First sentence: the opening sentence in `$W/report/lede.txt` (the `ui` key it used: `lede_all`, `lede_y`, `lede_r`
+  or `lede_none`). Then, from `$W/tmp/scan_mode.txt`, which bots were read in full and which continued from last time.
 - The status table: 3 columns with the first three `ui.th` headers (bot, status, current issue), in report order.
 - With proposals: the top 3, one line each. With none: one line saying nothing needs doing.
 - If the user asked something specific (for example, which bots they don't need), answer it in one sentence.
@@ -156,15 +159,9 @@ Skip to the weekly offer if there are no proposals. Otherwise ask one multi-sele
 - Never label an option "Remove X", "Delete X" or "Merge X": you can't do those.
 
 Apply **only** what the user picks:
-- **Text for another bot:** give the exact text as a message the user sends that bot, asking it to remember it (personal
-  bots may have no description field). Use a tool that changes another bot only if you have one and the user picked it.
-- **Setup items** (group chat, plugin, Auto-review rule, routine change): give the steps from `setup.md`.
-- **Your own memory:** save it.
-- **Routines:** create one only if the user picked it. Say what it will do and when (the user's real time zone).
-- **"Show me how to clean up X":** first ask the user to open X in the app and check whether any routine uses it; if one does,
-  move or pause that routine first. Then explain the steps: to delete X, right-click X in the sidebar and choose Delete
-  (deleting removes its profile, chat and routines; Hide from sidebar keeps them). To merge, give the text to paste into the
-  bot that takes over X's job, then delete X the same way. You never delete or merge anything yourself.
+- **Text for another bot:** the exact text as a message the user sends that bot, asking it to remember it (personal bots may have no description field). Change another bot only with a tool you have, and only if the user picked it.
+- **Setup items** (group chat, plugin, Auto-review rule, routine change): steps from `setup.md`. **Your own memory:** save it. **Routines:** only if picked; say what and when (the user's real time zone).
+- **"Show me how to clean up X":** the user checks X's routines first (move or pause any that use it), then right-clicks X and chooses Delete (removes profile, chat and routines; Hide from sidebar keeps them). To merge, give the text for the bot that takes over; the user deletes X the same way. You never delete or merge anything yourself.
 
 After the picks are handled (or straight away with no proposals), ask once, as a separate short question, whether to
 re-run this audit every week: a yes/no choice (two options, "Yes, every Monday 9:00 <zone>" and "No"), in the user's

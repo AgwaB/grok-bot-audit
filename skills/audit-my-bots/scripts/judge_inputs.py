@@ -34,6 +34,8 @@ r"""Bot Audit, step 3: pick user messages that might be corrections, export judg
       Each line is echoed with the item's user text. Lines may be added over several batches; each run rewrites
       W/labels.json from the whole file; items without a line are type "none" (not a correction).
       No candidates at all -> labels.json is {}.
+      Incremental run: if W/tmp/carried_labels.json exists (checkpoint.py assemble), those labels are kept and
+      --list hides them. A line for an item already in that file is an error. Items in neither are "none".
 
 Items are marked "check" when they are each bot's last 3 user messages (check: last; keeping or pausing a bot is said
 there) or a text the user sent word for word on 3+ days outside group chats (check: repeat N days). They need a line
@@ -127,6 +129,21 @@ def load_items(work):
 def find(items, ref):
     return next((x for x in items if str(x.get('n')) == str(ref) or x['key'] == ref), None)
 
+def carried_labels(work):
+    """Labels kept from the previous run, or None when this run is not merging a checkpoint.
+    A file that exists but isn't a label map is an error: guessing would wipe the carried labels."""
+    path = os.path.join(work, 'tmp', 'carried_labels.json')
+    plan = load_json(os.path.join(work, 'tmp', 'plan.json'), None)
+    incremental = isinstance(plan, dict) and any(b.get('mode') == 'incremental' for b in (plan.get('bots') or {}).values())
+    if not os.path.isfile(path):
+        if incremental:
+            sys.exit('carried labels missing; run checkpoint.py assemble')
+        return None
+    data = load_json(path, None)
+    if not isinstance(data, dict) or any(not isinstance(v, dict) or v.get('type') not in TYPES for v in data.values()):
+        sys.exit('carried labels are unreadable: ' + path)
+    return data
+
 def show(work, refs):
     items = load_items(work)
     tls = {os.path.basename(p)[:-5]: load_json(p) for p in glob.glob(os.path.join(work, 'timelines', '*.json'))}
@@ -143,10 +160,14 @@ def show(work, refs):
 
 def listing(work, lo, hi, width=220, kb=0):
     """Items lo..hi. With kb > 0, stop once the batch reaches about kb KB (bytes, so the count depends on the script and
-    length of the messages) and print the --from of the next batch."""
+    length of the messages) and print the --from of the next batch. Items already in the carried labels are hidden."""
+    hidden = set((carried_labels(work) or {}))
     prev, size, n, first, last, more = None, 0, 0, None, None, None
-    for x in load_items(work):
+    items = load_items(work)
+    for x in items:
         if lo <= x['n'] <= hi:
+            if x['key'] in hidden:
+                continue
             if kb and n and size >= kb * 1024:
                 more = x['n']; break
             same = prev and prev['bot'] == x['bot'] and prev['next_bot'] and norm(prev['next_bot'])[:120] == norm(x['prev_bot'])[:120]
@@ -161,11 +182,16 @@ def listing(work, lo, hi, width=220, kb=0):
             f"; about {max(5, int(10240 // per))} items of this size fit in 10 KB"
         print(f"-- {n} items (#{first}-#{last}), {size / 1024:.1f} KB{tail}"
               + ('' if width <= 100 else ' (--short makes items smaller)'))
+    elif hidden and not any(x['key'] not in hidden and x['n'] >= lo for x in items):
+        print('-- no new items' if not any(x['key'] not in hidden for x in items) or lo <= 1
+              else '-- no items from #%d on: that was the last batch' % lo)
     elif kb:
         print('-- no items from #%d on: that was the last batch' % lo)
 
 def label(work, path):
-    items = load_items(work); out, bad = {}, []
+    items = load_items(work); bad = []
+    carry = carried_labels(work)
+    out = {k: v for k, v in (carry or {}).items() if any(it['key'] == k for it in items)}
     for ln, line in enumerate(open(path, encoding='utf-8'), 1):
         if not line.strip() or line.lstrip().startswith('#'): continue
         parts = [p.strip() for p in line.rstrip('\n').split('\t')] + [''] * 7
@@ -177,6 +203,8 @@ def label(work, path):
         start = norm(parts[6])
         if start and not norm(it['user']).lower().startswith(start.lower()):
             bad.append(f"line {ln}: item {parts[0]} user text starts \"{norm(it['user'])[:30]}\", not \"{start[:30]}\" (off by one?)"); continue
+        if carry is not None and it['key'] in carry:
+            bad.append(f'line {ln}: item {parts[0]} was labelled on an earlier run; leave it out'); continue
         if it['key'] in out: bad.append(f'line {ln}: item {parts[0]} labelled twice (the later line wins)')
         out[it['key']] = dict(label=ty == 'correction', type=ty,
                               topic=(parts[2] or 'other') if ty in ('correction', 'preference') else None,
@@ -189,9 +217,10 @@ def label(work, path):
     for b in bad: print('ERROR', b)
     dump_json(out, os.path.join(work, 'labels.json'))
     n = sum(v['label'] for v in out.values())
+    carried_n = '' if carry is None else f', {sum(1 for k in carry if k in out)} carried forward'
     print(f'labels.json: {len(out)} items, {n} corrections, {sum(v["type"] == "preference" for v in out.values())} preferences, '
           f'{sum(v["type"] == "keep" for v in out.values())} keep, {sum(v["type"] == "ack" for v in out.values())} ack, '
-          f'{sum(bool(v.get("promise_later")) for v in out.values())} promised later')
+          f'{sum(bool(v.get("promise_later")) for v in out.values())} promised later{carried_n}')
     if bad: sys.exit(1)
 
 def digest(work, lo=1, kb=10):
